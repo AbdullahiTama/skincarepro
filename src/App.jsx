@@ -227,9 +227,9 @@ function LandingPage({ onLogin, onRegister }) {
             <div style={{fontSize:"28px",fontWeight:"900",color:"#0f172a",marginBottom:"12px"}}>Get discovered by patients searching for your products</div>
             <div style={{fontSize:"14px",color:"#555",lineHeight:"1.8",marginBottom:"20px"}}>When you add products to your CareHub inventory, they automatically appear on CareFind -- a public search platform where patients search for medicines, services, and healthcare businesses near them.</div>
             <div style={{display:"flex",flexDirection:"column",gap:"10px"}}>
-              {[["🔍","Patient searches Amoxicillin 500mg"],["📍","CareFind shows pharmacies near them with it in stock"],["💬","Patient taps WhatsApp to contact your pharmacy directly"],["✅","Your stock updates automatically when you make a sale"]].map(([i,t])=>(
+              {[["search","Patient searches Amoxicillin 500mg"],["pin","CareFind shows pharmacies near them with it in stock"],["chat","Patient taps WhatsApp to contact your pharmacy directly"],["check","Your stock updates automatically when you make a sale"]].map(([i,t])=>(
                 <div key={t} style={{display:"flex",alignItems:"center",gap:"10px",fontSize:"13px",color:"#555"}}>
-                  <span style={{fontSize:"18px"}}>{i}</span>{t}
+                  <span style={{fontSize:"18px",marginRight:"4px"}}>{"search"===i?"🔍":"pin"===i?"📍":"chat"===i?"💬":"✅"}</span>{t}
                 </div>
               ))}
             </div>
@@ -368,8 +368,8 @@ function Registration({ onBack, onSubmitted }) {
         <div style={{fontSize:"22px",fontWeight:"900",marginBottom:"8px"}}>Registration Submitted!</div>
         <div style={{fontSize:"14px",color:"#888",lineHeight:"1.8",marginBottom:"24px"}}>Thank you <strong>{data.firstName}</strong>! Your business <strong>{data.businessName}</strong> has been submitted. Admin will review within 24 hours.</div>
         <div style={{background:"#f0fdfa",borderRadius:"12px",padding:"16px",marginBottom:"24px",textAlign:"left"}}>
-          {[["✅","Registration submitted"],["⏳","Admin review in progress"],["⬜","You receive approval notification"],["⬜","Dashboard unlocked -- products visible on CareFind"]].map(([i,l])=>(
-            <div key={l} style={{display:"flex",gap:"10px",marginBottom:"8px",fontSize:"13px",color:i==="✅"?"#059669":i==="⏳"?"#d97706":"#bbb"}}><span>{i}</span><span>{l}</span></div>
+          {[["done","Registration submitted"],["pending","Admin review in progress"],["wait","You receive approval notification"],["wait2","Dashboard unlocked -- products visible on CareFind"]].map(([i,l])=>(
+            <div key={l} style={{display:"flex",gap:"10px",marginBottom:"8px",fontSize:"13px",color:i==="done"?"#059669":i==="pending"?"#d97706":"#bbb"}}><span>{"done"===i?"✅":"pending"===i?"⏳":"⬜"}</span><span>{l}</span></div>
           ))}
         </div>
         <DarkBtn onClick={onBack} style={{width:"100%",padding:"13px"}}>Back to Login</DarkBtn>
