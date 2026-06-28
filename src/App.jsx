@@ -1014,6 +1014,260 @@ function InlinePOS({ products, setProducts }) {
 }
 
 // PHARMACY & SKINCARE CONSULTATIONS (condensed)
+
+// ── HOSPITAL CONSULTATION ─────────────────────────────────────────────────────
+function HospitalConsultation({ onClose }) {
+  const [step,setStep]=useState(1);const [saved,setSaved]=useState(false);
+  const [form,setForm]=useState({regDate:todayDate(),regNo:"HSP-"+Math.floor(Math.random()*90000+10000)});
+  const TOTAL=5;const f=(k,v)=>setForm(p=>({...p,[k]:v}));
+  const RB=({label,fKey,val})=>(<label style={{display:"flex",alignItems:"center",gap:"8px",padding:"6px 12px",borderRadius:"8px",border:"1px solid"+(form[fKey]===val?TEALC:"#e5e7eb"),background:form[fKey]===val?"#f0fdfa":"white",cursor:"pointer",fontSize:"13px"}}><input type="radio" checked={form[fKey]===val} onChange={()=>f(fKey,val)} style={{accentColor:TEALC}}/>{label}</label>);
+  const steps=["Registration","Triage","Doctor","Treatment Plan","Follow-up"];
+  if(saved)return(<div style={{textAlign:"center",padding:"60px 20px"}}><div style={{fontSize:"56px",marginBottom:"16px"}}>✅</div><div style={{fontSize:"22px",fontWeight:"900",marginBottom:"8px"}}>Consultation Saved!</div><div style={{fontSize:"14px",color:"#888",marginBottom:"24px"}}>Record #{form.regNo} saved.</div><div style={{display:"flex",gap:"10px",justifyContent:"center",flexWrap:"wrap"}}><TealBtn onClick={()=>{setForm({regDate:todayDate(),regNo:"HSP-"+Math.floor(Math.random()*90000+10000)});setStep(1);setSaved(false);}}>New Consultation</TealBtn><GhostBtn onClick={onClose}>Back to List</GhostBtn></div></div>);
+  return(
+    <div>
+      <div style={{marginBottom:"16px"}}>
+        <div style={{display:"flex",justifyContent:"space-between",marginBottom:"6px"}}><span style={{fontSize:"12px",color:"#888"}}>Step {step} of {TOTAL} — {steps[step-1]}</span><span style={{fontSize:"12px",fontWeight:"700",color:TEALC}}>{Math.round((step/TOTAL)*100)}%</span></div>
+        <div style={{height:"6px",background:"#f0f0f0",borderRadius:"3px",overflow:"hidden"}}><div style={{height:"100%",width:((step/TOTAL)*100)+"%",background:TEAL,borderRadius:"3px",transition:"width 0.3s"}}/></div>
+        <div style={{display:"flex",gap:"6px",marginTop:"8px",flexWrap:"wrap"}}>
+          {steps.map((s,i)=><span key={s} style={{fontSize:"10px",fontWeight:step===i+1?"700":"400",color:step===i+1?TEALC:step>i+1?"#059669":"#bbb"}}>{step>i+1?"✓ ":""}{s}{i<steps.length-1?" · ":""}</span>)}
+        </div>
+      </div>
+
+      <div style={{minHeight:"380px",display:"flex",flexDirection:"column",gap:"14px"}}>
+        {step===1&&<>
+          <div style={{fontSize:"16px",fontWeight:"800",color:"#0f172a"}}>Step 1 — Patient Registration</div>
+          <div style={{padding:"10px 14px",borderRadius:"10px",background:"#f0fdfa",border:"1px solid #ccfbf1",fontSize:"12px",color:TEALC,fontWeight:"600"}}>Handled by Reception / Registration Officer</div>
+          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"12px"}}>
+            <Inp label="Registration No." value={form.regNo} onChange={v=>f("regNo",v)}/>
+            <Inp label="Registration Date" value={form.regDate} onChange={v=>f("regDate",v)} type="date"/>
+          </div>
+          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"12px"}}>
+            <Inp label="Full Name *" value={form.patName} onChange={v=>f("patName",v)} placeholder="Patient full name" required/>
+            <Inp label="Date of Birth" value={form.dob} onChange={v=>f("dob",v)} type="date"/>
+          </div>
+          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"12px"}}>
+            <Sel label="Gender" value={form.gender} onChange={v=>f("gender",v)} options={["Male","Female","Other"]}/>
+            <Inp label="Phone Number *" value={form.phone} onChange={v=>f("phone",v)} placeholder="08012345678" required/>
+          </div>
+          <Inp label="Address" value={form.address} onChange={v=>f("address",v)} placeholder="Home address"/>
+          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"12px"}}>
+            <Inp label="Next of Kin" value={form.nokName} onChange={v=>f("nokName",v)} placeholder="Name"/>
+            <Inp label="Next of Kin Phone" value={form.nokPhone} onChange={v=>f("nokPhone",v)} placeholder="Phone"/>
+          </div>
+          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"12px"}}>
+            <Sel label="Department" value={form.dept} onChange={v=>f("dept",v)} options={["General OPD","Emergency","Cardiology","Pediatrics","Obstetrics","Surgery","Orthopedics","ENT","Ophthalmology","Dermatology","Psychiatry","Neurology","Oncology","Other"]}/>
+            <Inp label="Assigned Doctor" value={form.doctor} onChange={v=>f("doctor",v)} placeholder="Dr. Name"/>
+          </div>
+          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"12px"}}>
+            <Sel label="Insurance / HMO" value={form.insurance} onChange={v=>f("insurance",v)} options={["None / Self-pay","NHIS","PHIS","Leadway","Aiico","Hygeia","Reliance","AXA Mansard","Other"]}/>
+            <Sel label="Payment Status" value={form.payStatus} onChange={v=>f("payStatus",v)} options={["Paid","Pending","Insurance","Waived"]}/>
+          </div>
+        </>}
+
+        {step===2&&<>
+          <div style={{fontSize:"16px",fontWeight:"800",color:"#0f172a"}}>Step 2 — Nurse / Triage</div>
+          <div style={{padding:"10px 14px",borderRadius:"10px",background:"#f0fdfa",border:"1px solid #ccfbf1",fontSize:"12px",color:TEALC,fontWeight:"600"}}>Handled by Nurse</div>
+          <div style={{padding:"12px",borderRadius:"10px",background:"#fafafa",border:"1px solid #f0f0f0"}}>
+            <div style={{fontSize:"12px",fontWeight:"700",color:"#888",marginBottom:"4px"}}>Patient</div>
+            <div style={{fontWeight:"800",fontSize:"15px"}}>{form.patName||"Not entered"}</div>
+            <div style={{fontSize:"12px",color:"#888",marginTop:"2px"}}>{form.regNo} · {form.dept||"No dept"}</div>
+          </div>
+          <div style={{fontSize:"13px",fontWeight:"700",color:"#0f172a",marginBottom:"-4px"}}>Vital Signs</div>
+          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"10px"}}>
+            <Inp label="Weight (kg)" value={form.weight} onChange={v=>f("weight",v)} placeholder="e.g. 68"/>
+            <Inp label="Height (cm)" value={form.height} onChange={v=>f("height",v)} placeholder="e.g. 170"/>
+            <Inp label="Blood Pressure" value={form.bp} onChange={v=>f("bp",v)} placeholder="e.g. 120/80 mmHg"/>
+            <Inp label="Pulse (bpm)" value={form.pulse} onChange={v=>f("pulse",v)} placeholder="e.g. 72"/>
+            <Inp label="Temperature (°C)" value={form.temp} onChange={v=>f("temp",v)} placeholder="e.g. 37.2"/>
+            <Inp label="Respiratory Rate" value={form.rr} onChange={v=>f("rr",v)} placeholder="e.g. 16 breaths/min"/>
+            <Inp label="Oxygen Saturation" value={form.spo2} onChange={v=>f("spo2",v)} placeholder="e.g. 98%"/>
+            <Inp label="Blood Sugar (optional)" value={form.bs} onChange={v=>f("bs",v)} placeholder="e.g. 5.6 mmol/L"/>
+          </div>
+          <Textarea label="Chief Complaint (brief)" value={form.chiefComplaint} onChange={v=>f("chiefComplaint",v)} placeholder="Brief description of main complaint..." rows={2}/>
+          <Textarea label="Allergy Information (if newly identified)" value={form.allergies} onChange={v=>f("allergies",v)} placeholder="Any known allergies..." rows={2}/>
+          {form.allergies&&<div style={{padding:"8px 12px",borderRadius:"8px",background:"#fef2f2",border:"1px solid #fecaca",fontSize:"12px",color:"#dc2626",fontWeight:"700"}}>⚠️ ALLERGY ALERT: {form.allergies}</div>}
+        </>}
+
+        {step===3&&<>
+          <div style={{fontSize:"16px",fontWeight:"800",color:"#0f172a"}}>Step 3 — Doctor Consultation</div>
+          <div style={{padding:"10px 14px",borderRadius:"10px",background:"#f0fdfa",border:"1px solid #ccfbf1",fontSize:"12px",color:TEALC,fontWeight:"600"}}>Handled by Doctor — patient info auto-filled from registration</div>
+          <div style={{padding:"14px",borderRadius:"12px",background:"#fafafa",border:"1px solid #f0f0f0",display:"grid",gridTemplateColumns:"1fr 1fr",gap:"8px"}}>
+            {[["Patient",form.patName||"—"],["Hospital No.",form.regNo],["Department",form.dept||"—"],["Doctor",form.doctor||"—"],["BP",form.bp||"—"],["Temp",form.temp||"—"],["Allergies",form.allergies||"None"],["Chief Complaint",form.chiefComplaint||"—"]].map(([l,v])=>(
+              <div key={l}><div style={{fontSize:"10px",color:"#aaa",fontWeight:"700"}}>{l}</div><div style={{fontSize:"12px",fontWeight:"600",color:"#0f172a"}}>{v}</div></div>
+            ))}
+          </div>
+          <Textarea label="History of Present Illness" value={form.hpi} onChange={v=>f("hpi",v)} placeholder="Detailed history of current illness, onset, duration, severity, associated symptoms..." rows={4}/>
+          <Textarea label="Physical Examination Findings" value={form.exam} onChange={v=>f("exam",v)} placeholder="General appearance, systemic examination findings..." rows={3}/>
+          <Inp label="Primary Diagnosis" value={form.dx1} onChange={v=>f("dx1",v)} placeholder="e.g. Hypertensive crisis, Malaria, Type 2 Diabetes..." required/>
+          <Inp label="Secondary Diagnosis (optional)" value={form.dx2} onChange={v=>f("dx2",v)} placeholder="Additional diagnosis..."/>
+          <Textarea label="Clinical Notes" value={form.clinicalNotes} onChange={v=>f("clinicalNotes",v)} placeholder="Additional clinical notes, observations..." rows={3}/>
+        </>}
+
+        {step===4&&<>
+          <div style={{fontSize:"16px",fontWeight:"800",color:"#0f172a"}}>Step 4 — Treatment Plan</div>
+          <div style={{padding:"10px 14px",borderRadius:"10px",background:"#f0fdfa",border:"1px solid #ccfbf1",fontSize:"12px",color:TEALC,fontWeight:"600"}}>Prescriptions, lab requests, imaging and referrals</div>
+          <Textarea label="Prescriptions / Medications" value={form.prescriptions} onChange={v=>f("prescriptions",v)} placeholder="Drug name — Dose — Frequency — Duration — Route&#10;e.g. Amlodipine 10mg — Once daily — 30 days — Oral" rows={4}/>
+          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"12px"}}>
+            <Textarea label="Laboratory Tests Ordered" value={form.labTests} onChange={v=>f("labTests",v)} placeholder="e.g. FBC, LFT, RFT, Malaria RDT, Blood culture..." rows={3}/>
+            <Textarea label="Imaging Ordered" value={form.imaging} onChange={v=>f("imaging",v)} placeholder="e.g. Chest X-ray, Abdominal USS, CT scan..." rows={3}/>
+          </div>
+          <div>
+            <div style={{fontSize:"11px",fontWeight:"700",color:"#666",marginBottom:"8px"}}>Patient Disposition</div>
+            <div style={{display:"flex",gap:"8px",flexWrap:"wrap"}}>
+              {["Discharge","Admit","Refer to Specialist","Emergency Transfer"].map(v=><RB key={v} label={v} fKey="disposition" val={v}/>)}
+            </div>
+          </div>
+          {form.disposition==="Refer to Specialist"&&<div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"12px"}}>
+            <Inp label="Referral Specialist / Hospital" value={form.refDest} onChange={v=>f("refDest",v)} placeholder="e.g. Cardiology, LUTH..."/>
+            <Textarea label="Reason for Referral" value={form.refReason} onChange={v=>f("refReason",v)} rows={2}/>
+          </div>}
+          {form.disposition==="Admit"&&<Inp label="Ward / Bed Assignment" value={form.ward} onChange={v=>f("ward",v)} placeholder="e.g. Male Medical Ward, Bed 5"/>}
+          <Textarea label="Patient Counselling & Instructions" value={form.counselling} onChange={v=>f("counselling",v)} placeholder="Instructions given to patient — diet, lifestyle, medication compliance..." rows={3}/>
+        </>}
+
+        {step===5&&<>
+          <div style={{fontSize:"16px",fontWeight:"800",color:"#0f172a"}}>Step 5 — Follow-up</div>
+          <div style={{display:"flex",gap:"8px",flexWrap:"wrap",marginBottom:"8px"}}>
+            {["Yes","No"].map(v=><RB key={v} label={"Follow-up "+v} fKey="followup" val={v}/>)}
+          </div>
+          {form.followup==="Yes"&&<div style={{display:"flex",flexDirection:"column",gap:"12px"}}>
+            <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"12px"}}>
+              <Inp label="Follow-up Date" value={form.fuDate} onChange={v=>f("fuDate",v)} type="date"/>
+              <Sel label="Follow-up Clinic" value={form.fuClinic} onChange={v=>f("fuClinic",v)} options={["Same Doctor","General OPD","Cardiology","Pediatrics","Surgery","Other"]}/>
+            </div>
+            <Textarea label="Follow-up Reason / Instructions" value={form.fuReason} onChange={v=>f("fuReason",v)} placeholder="What to review on follow-up..." rows={2}/>
+            {form.fuDate&&<div style={{padding:"10px 14px",borderRadius:"10px",background:"#eff6ff",border:"1px solid #bfdbfe",fontSize:"12px",color:"#1d4ed8"}}>🔔 Automatic reminder will be set for {form.fuDate}</div>}
+          </div>}
+          <div style={{padding:"14px",borderRadius:"12px",background:"#fafafa",border:"1px solid #f0f0f0"}}>
+            <div style={{fontSize:"13px",fontWeight:"700",color:"#0f172a",marginBottom:"12px"}}>Consultation Summary</div>
+            {[["Patient",form.patName||"—"],["Diagnosis",form.dx1||"—"],["Disposition",form.disposition||"—"],["Doctor",form.doctor||"—"]].map(([l,v])=>(
+              <div key={l} style={{display:"flex",justifyContent:"space-between",padding:"6px 0",borderBottom:"1px solid #f5f5f5",fontSize:"13px"}}>
+                <span style={{color:"#888",fontWeight:"600"}}>{l}</span><span style={{color:"#0f172a"}}>{v}</span>
+              </div>
+            ))}
+          </div>
+          <Inp label="Attending Doctor Signature" value={form.doctorSig} onChange={v=>f("doctorSig",v)} placeholder="Type doctor name as signature"/>
+        </>}
+      </div>
+
+      <div style={{display:"flex",gap:"10px",marginTop:"20px",borderTop:"1px solid #f0f0f0",paddingTop:"16px"}}>
+        {step>1&&<GhostBtn onClick={()=>setStep(s=>s-1)} style={{flex:1,padding:"12px"}}>Previous</GhostBtn>}
+        {step<TOTAL
+          ?<TealBtn onClick={()=>setStep(s=>s+1)} style={{flex:1,padding:"12px",fontSize:"14px"}}>Next Step</TealBtn>
+          :<button onClick={()=>setSaved(true)} style={{flex:1,padding:"12px",borderRadius:"12px",border:"none",background:TEAL,color:"white",fontWeight:"800",fontSize:"14px",cursor:"pointer"}}>Save Consultation</button>
+        }
+      </div>
+    </div>
+  );
+}
+
+// ── GENERAL CONSULTATION (Dental, Optical, Wellness) ─────────────────────────
+function GeneralConsultation({ onClose, businessType }) {
+  const [form,setForm]=useState({consultDate:todayDate(),consultNo:"CON-"+Math.floor(Math.random()*9000+1000)});
+  const [saved,setSaved]=useState(false);
+  const f=(k,v)=>setForm(p=>({...p,[k]:v}));
+  const typeLabel=businessType==="dental"?"Dental":businessType==="optical"?"Optical / Eye":"Wellness";
+  const typeIcon=businessType==="dental"?"🦷":businessType==="optical"?"👁":"🌿";
+  const specialFields=()=>{
+    if(businessType==="dental") return(
+      <div style={{display:"flex",flexDirection:"column",gap:"12px"}}>
+        <div style={{fontSize:"14px",fontWeight:"700",color:"#0f172a"}}>Dental Assessment</div>
+        <Sel label="Chief Dental Complaint" value={form.dentalComplaint} onChange={v=>f("dentalComplaint",v)} options={["Toothache","Sensitivity","Bleeding Gums","Broken Tooth","Missing Tooth","Bad Breath","Tooth Discolouration","Jaw Pain","Swelling","Routine Checkup","Other"]}/>
+        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"12px"}}>
+          <Inp label="Tooth Number(s) Affected" value={form.toothNo} onChange={v=>f("toothNo",v)} placeholder="e.g. 16, 26, 36"/>
+          <Sel label="Pain Level (1-10)" value={form.painLevel} onChange={v=>f("painLevel",v)} options={["1","2","3","4","5","6","7","8","9","10"]}/>
+        </div>
+        <Textarea label="Oral Examination Findings" value={form.oralExam} onChange={v=>f("oralExam",v)} placeholder="Gum condition, tooth decay, plaque, bite issues..." rows={3}/>
+        <Sel label="Treatment Provided" value={form.dentalTx} onChange={v=>f("dentalTx",v)} options={["Scaling & Polishing","Extraction","Filling","Root Canal","Crown","Tooth Whitening","Orthodontic Review","X-ray","Prescription Only","Referral","Other"]}/>
+      </div>
+    );
+    if(businessType==="optical") return(
+      <div style={{display:"flex",flexDirection:"column",gap:"12px"}}>
+        <div style={{fontSize:"14px",fontWeight:"700",color:"#0f172a"}}>Eye Examination</div>
+        <Sel label="Chief Eye Complaint" value={form.eyeComplaint} onChange={v=>f("eyeComplaint",v)} options={["Blurry Vision","Eye Pain","Redness","Discharge","Itching","Floaters","Double Vision","Headaches","Routine Checkup","Other"]}/>
+        <div style={{fontSize:"13px",fontWeight:"700",color:"#555",marginTop:"4px"}}>Visual Acuity</div>
+        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"12px"}}>
+          <Inp label="Right Eye (OD)" value={form.vaOD} onChange={v=>f("vaOD",v)} placeholder="e.g. 6/6"/>
+          <Inp label="Left Eye (OS)" value={form.vaOS} onChange={v=>f("vaOS",v)} placeholder="e.g. 6/12"/>
+        </div>
+        <div style={{fontSize:"13px",fontWeight:"700",color:"#555",marginTop:"4px"}}>Refraction / Prescription</div>
+        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"12px"}}>
+          <Inp label="Right Sphere (SPH)" value={form.sphOD} onChange={v=>f("sphOD",v)} placeholder="e.g. -2.50"/>
+          <Inp label="Left Sphere (SPH)" value={form.sphOS} onChange={v=>f("sphOS",v)} placeholder="e.g. -1.75"/>
+          <Inp label="Right Cylinder (CYL)" value={form.cylOD} onChange={v=>f("cylOD",v)} placeholder="e.g. -0.75"/>
+          <Inp label="Left Cylinder (CYL)" value={form.cylOS} onChange={v=>f("cylOS",v)} placeholder="e.g. -0.50"/>
+          <Inp label="Right Axis" value={form.axisOD} onChange={v=>f("axisOD",v)} placeholder="e.g. 180"/>
+          <Inp label="Left Axis" value={form.axisOS} onChange={v=>f("axisOS",v)} placeholder="e.g. 90"/>
+        </div>
+        <Sel label="Recommended" value={form.eyeRec} onChange={v=>f("eyeRec",v)} options={["Prescription Glasses","Contact Lenses","Both","Surgery Referral","No Correction Needed","Follow-up"]}/>
+        <Textarea label="Eye Examination Notes" value={form.eyeNotes} onChange={v=>f("eyeNotes",v)} placeholder="Additional findings, IOP, fundus examination..." rows={3}/>
+      </div>
+    );
+    if(businessType==="wellness") return(
+      <div style={{display:"flex",flexDirection:"column",gap:"12px"}}>
+        <div style={{fontSize:"14px",fontWeight:"700",color:"#0f172a"}}>Wellness Assessment</div>
+        <Sel label="Wellness Goal" value={form.wellnessGoal} onChange={v=>f("wellnessGoal",v)} options={["Weight Loss","Weight Gain","Muscle Building","Stress Management","Chronic Disease Management","Nutritional Deficiency","General Wellness","Sports Nutrition","Pregnancy Nutrition","Other"]}/>
+        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"12px"}}>
+          <Inp label="Current Weight (kg)" value={form.weight} onChange={v=>f("weight",v)} placeholder="e.g. 80"/>
+          <Inp label="Target Weight (kg)" value={form.targetWeight} onChange={v=>f("targetWeight",v)} placeholder="e.g. 70"/>
+          <Inp label="Height (cm)" value={form.height} onChange={v=>f("height",v)} placeholder="e.g. 170"/>
+          <Inp label="BMI" value={form.bmi} onChange={v=>f("bmi",v)} placeholder="Auto-calculated"/>
+        </div>
+        <Textarea label="Current Diet & Eating Habits" value={form.diet} onChange={v=>f("diet",v)} placeholder="Describe current diet, meal frequency, food preferences..." rows={3}/>
+        <Textarea label="Physical Activity Level" value={form.activity} onChange={v=>f("activity",v)} placeholder="Exercise frequency, type, duration..." rows={2}/>
+        <Textarea label="Nutrition / Wellness Plan" value={form.wellnessPlan} onChange={v=>f("wellnessPlan",v)} placeholder="Recommended diet plan, supplements, lifestyle changes..." rows={3}/>
+      </div>
+    );
+    return null;
+  };
+  if(saved)return(<div style={{textAlign:"center",padding:"60px 20px"}}><div style={{fontSize:"56px",marginBottom:"16px"}}>✅</div><div style={{fontSize:"22px",fontWeight:"900",marginBottom:"8px"}}>Consultation Saved!</div><div style={{fontSize:"14px",color:"#888",marginBottom:"24px"}}>Consultation #{form.consultNo} recorded.</div><div style={{display:"flex",gap:"10px",justifyContent:"center",flexWrap:"wrap"}}><TealBtn onClick={()=>{setForm({consultDate:todayDate(),consultNo:"CON-"+Math.floor(Math.random()*9000+1000)});setSaved(false);}}>New Consultation</TealBtn><GhostBtn onClick={onClose}>Back to List</GhostBtn></div></div>);
+  return(
+    <div style={{display:"flex",flexDirection:"column",gap:"16px"}}>
+      <Card style={{padding:"16px"}}>
+        <div style={{fontSize:"13px",fontWeight:"700",marginBottom:"12px"}}>👤 Patient Information</div>
+        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"12px"}}>
+          <Inp label="Full Name *" value={form.patName} onChange={v=>f("patName",v)} placeholder="Patient full name" required/>
+          <Inp label="Phone Number" value={form.phone} onChange={v=>f("phone",v)} placeholder="08012345678"/>
+          <Inp label="Age" value={form.age} onChange={v=>f("age",v)} placeholder="e.g. 35"/>
+          <Sel label="Gender" value={form.gender} onChange={v=>f("gender",v)} options={["Male","Female","Other"]}/>
+          <Inp label="Date" value={form.consultDate} onChange={v=>f("consultDate",v)} type="date"/>
+          <Inp label="Consultation No." value={form.consultNo} onChange={v=>f("consultNo",v)}/>
+        </div>
+      </Card>
+      <Card style={{padding:"16px"}}>
+        <div style={{fontSize:"13px",fontWeight:"700",marginBottom:"12px"}}>🏥 Medical History</div>
+        <div style={{display:"flex",flexDirection:"column",gap:"10px"}}>
+          <Textarea label="Existing Medical Conditions" value={form.medHistory} onChange={v=>f("medHistory",v)} placeholder="Any known conditions..." rows={2}/>
+          <Textarea label="Current Medications" value={form.medications} onChange={v=>f("medications",v)} placeholder="List current medications..." rows={2}/>
+          <Textarea label="Allergies" value={form.allergies} onChange={v=>f("allergies",v)} placeholder="Known allergies..." rows={2}/>
+        </div>
+      </Card>
+      <Card style={{padding:"16px"}}>{specialFields()}</Card>
+      <Card style={{padding:"16px"}}>
+        <div style={{fontSize:"13px",fontWeight:"700",marginBottom:"12px"}}>📋 Assessment & Plan</div>
+        <div style={{display:"flex",flexDirection:"column",gap:"10px"}}>
+          <Textarea label="Practitioner Assessment" value={form.assessment} onChange={v=>f("assessment",v)} placeholder="Clinical assessment and findings..." rows={3}/>
+          <Textarea label="Treatment / Recommendations" value={form.treatment} onChange={v=>f("treatment",v)} placeholder="Treatment provided and recommendations..." rows={3}/>
+          <Textarea label="Counselling Notes" value={form.counselling} onChange={v=>f("counselling",v)} placeholder="Advice and counselling given..." rows={2}/>
+        </div>
+      </Card>
+      <Card style={{padding:"16px"}}>
+        <div style={{fontSize:"13px",fontWeight:"700",marginBottom:"12px"}}>📅 Follow-up</div>
+        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"12px"}}>
+          <Inp label="Follow-up Date" value={form.fuDate} onChange={v=>f("fuDate",v)} type="date"/>
+          <Sel label="Method" value={form.fuMethod} onChange={v=>f("fuMethod",v)} options={["In-Person","Phone Call","WhatsApp","SMS"]}/>
+        </div>
+        {form.fuDate&&<div style={{marginTop:"10px",padding:"10px",borderRadius:"8px",background:"#f0fdfa",fontSize:"12px",color:TEALC}}>🔔 Reminder set for {form.fuDate}</div>}
+      </Card>
+      <div style={{display:"flex",gap:"10px"}}>
+        <TealBtn onClick={()=>setSaved(true)} style={{flex:1,padding:"13px",fontSize:"14px"}}>Save Consultation</TealBtn>
+        <GhostBtn onClick={()=>setSaved(true)} style={{flex:1,padding:"13px"}}>Save & Print</GhostBtn>
+      </div>
+    </div>
+  );
+}
+
+
 function PharmacyConsultation({ onClose, products }) {
   const [form,setForm]=useState({consultDate:todayDate(),consultNo:"CON-"+Math.floor(Math.random()*9000+1000)});const [medicines,setMedicines]=useState([]);const [medSearch,setMedSearch]=useState("");const [saved,setSaved]=useState(false);const [selPatient,setSelPatient]=useState(null);const [patSearch,setPatSearch]=useState("");const [showPats,setShowPats]=useState(false);
   const f=(k,v)=>setForm(p=>({...p,[k]:v}));
@@ -1108,7 +1362,29 @@ function PharmacyConsultation({ onClose, products }) {
 function ConsultationPage({ businessType, products }) {
   const [view,setView]=useState("list");const [selC,setSelC]=useState(null);
   const past=[{id:1,client:"Ngozi Adeyemi",date:"Jun 10",staff:"Dr. Sade",type:"New Complaint",status:"completed"},{id:2,client:"Fatima Bello",date:"Jun 5",staff:"Dr. Amara",type:"Follow-up",status:"completed"},{id:3,client:"Chisom Obi",date:"May 28",staff:"Dr. Sade",type:"Repeat Prescription",status:"completed"}];
-  if(view==="new")return(<div><div style={{display:"flex",alignItems:"center",gap:"12px",marginBottom:"20px"}}><button onClick={()=>setView("list")} style={{width:"36px",height:"36px",borderRadius:"10px",background:"white",border:"1px solid #e5e7eb",cursor:"pointer",fontSize:"18px",display:"flex",alignItems:"center",justifyContent:"center"}}>←</button><div><div style={{fontWeight:"900",fontSize:"18px",color:"#0f172a"}}>{businessType==="pharmacy"?"Pharmacy Consultation":"Skincare Consultation"}</div><div style={{fontSize:"12px",color:"#aaa"}}>New record</div></div></div>{businessType==="pharmacy"?<PharmacyConsultation onClose={()=>setView("list")} products={products}/>:<div style={{textAlign:"center",padding:"60px",color:"#aaa"}}><div style={{fontSize:"40px",marginBottom:"12px"}}>🧴</div><div>Skincare consultation form -- coming in next update</div><GhostBtn onClick={()=>setView("list")} style={{marginTop:"16px"}}>Back to List</GhostBtn></div>}</div>);
+  const formTitle=()=>{
+    if(businessType==="pharmacy") return "Pharmacy Consultation";
+    if(businessType==="hospital") return "Hospital Consultation";
+    if(businessType==="dental") return "Dental Consultation";
+    if(businessType==="optical") return "Optical / Eye Consultation";
+    if(businessType==="wellness") return "Wellness Consultation";
+    return "Skincare Consultation";
+  };
+  const renderForm=()=>{
+    if(businessType==="pharmacy") return <PharmacyConsultation onClose={()=>setView("list")} products={products}/>;
+    if(businessType==="hospital") return <HospitalConsultation onClose={()=>setView("list")}/>;
+    if(businessType==="dental"||businessType==="optical"||businessType==="wellness") return <GeneralConsultation onClose={()=>setView("list")} businessType={businessType}/>;
+    return <SkincareConsultation onClose={()=>setView("list")}/>;
+  };
+  if(view==="new")return(
+    <div>
+      <div style={{display:"flex",alignItems:"center",gap:"12px",marginBottom:"20px"}}>
+        <button onClick={()=>setView("list")} style={{width:"36px",height:"36px",borderRadius:"10px",background:"white",border:"1px solid #e5e7eb",cursor:"pointer",fontSize:"18px",display:"flex",alignItems:"center",justifyContent:"center"}}>←</button>
+        <div><div style={{fontWeight:"900",fontSize:"18px",color:"#0f172a"}}>{formTitle()}</div><div style={{fontSize:"12px",color:"#aaa"}}>New consultation record</div></div>
+      </div>
+      {renderForm()}
+    </div>
+  );
   return(<div><SectionHead title="Consultations" sub={businessType==="pharmacy"?"Patient records":"Client records"} btn="+ New Consultation" onBtn={()=>setView("new")}/><div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:"14px",marginBottom:"20px"}}><StatCard icon="📋" label="Total" value={past.length}/><StatCard icon="📅" label="This Month" value="2"/><StatCard icon="⏳" label="Pending Follow-up" value="1"/></div><Card><div style={{overflowX:"auto"}}><table style={{width:"100%",borderCollapse:"collapse"}}><thead><tr style={{borderBottom:"1px solid #f5f5f5",background:"#fafafa"}}>{["Client","Date","Staff","Type","Status","Action"].map(h=><th key={h} style={{padding:"12px 16px",textAlign:"left",fontSize:"11px",fontWeight:"700",color:"#aaa",textTransform:"uppercase"}}>{h}</th>)}</tr></thead><tbody>{past.map(c=>(<tr key={c.id} style={{borderBottom:"1px solid #f9f9f9"}}><td style={{padding:"12px 16px"}}><div style={{display:"flex",alignItems:"center",gap:"8px"}}><Avatar name={c.client} size={30}/><span style={{fontWeight:"700",fontSize:"13px"}}>{c.client}</span></div></td><td style={{padding:"12px 16px",fontSize:"12px",color:"#aaa"}}>{c.date}</td><td style={{padding:"12px 16px",fontSize:"13px",color:"#666"}}>{c.staff}</td><td style={{padding:"12px 16px"}}><Pill label={c.type} type="teal"/></td><td style={{padding:"12px 16px"}}><Pill label={c.status} type="green"/></td><td style={{padding:"12px 16px"}}><div style={{display:"flex",gap:"6px"}}><GhostBtn onClick={()=>setSelC(c)}>View</GhostBtn><GhostBtn>PDF</GhostBtn></div></td></tr>))}</tbody></table></div></Card><Modal show={!!selC} onClose={()=>setSelC(null)} title="Consultation Summary">{selC&&[["Client",selC.client],["Date",selC.date],["Staff",selC.staff],["Type",selC.type],["Status",selC.status]].map(([l,v])=><div key={l} style={{display:"flex",justifyContent:"space-between",padding:"8px 0",borderBottom:"1px solid #f9f9f9",fontSize:"13px"}}><span style={{color:"#888",fontWeight:"600"}}>{l}</span><span style={{color:"#0f172a"}}>{v}</span></div>)}</Modal></div>);
 }
 
