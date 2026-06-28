@@ -1,7 +1,50 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 
 const ADMIN_EMAIL = "admin@carehub.ng";
 const ADMIN_PASS  = "Admin@2025";
+
+// SUPABASE CONNECTION
+const SB_URL = "https://szdybxmgmhndoytqanfb.supabase.co";
+const SB_KEY = "sb_publishable_xEs5f4L6qSxqXikPZM06SQ_TKy4UNFz";
+
+async function sbFetch(path, options) {
+  const opts = options || {};
+  const res = await fetch(SB_URL + "/rest/v1/" + path, {
+    method: opts.method || "GET",
+    headers: {
+      "apikey": SB_KEY,
+      "Authorization": "Bearer " + SB_KEY,
+      "Content-Type": "application/json",
+      "Prefer": opts.prefer || "return=representation"
+    },
+    body: opts.body || undefined
+  });
+  const text = await res.text();
+  return text ? JSON.parse(text) : [];
+}
+
+async function dbGetBusinesses() {
+  return sbFetch("businesses?select=*&order=created_at.desc");
+}
+async function dbLoginBusiness(email, password) {
+  const r = await sbFetch("businesses?email=eq." + encodeURIComponent(email) + "&password=eq." + encodeURIComponent(password) + "&select=*");
+  return r[0] || null;
+}
+async function dbRegisterBusiness(data) {
+  return sbFetch("businesses", { method: "POST", body: JSON.stringify(data) });
+}
+async function dbUpdateStatus(id, status) {
+  return sbFetch("businesses?id=eq." + id, { method: "PATCH", body: JSON.stringify({ status: status }), prefer: "return=minimal" });
+}
+async function dbGetTeam() {
+  return sbFetch("admin_team?select=*&order=created_at.desc");
+}
+async function dbInviteTeam(data) {
+  return sbFetch("admin_team", { method: "POST", body: JSON.stringify(data) });
+}
+async function dbRemoveTeam(id) {
+  return sbFetch("admin_team?id=eq." + id, { method: "DELETE", prefer: "return=minimal" });
+}
 
 const BUSINESS_TYPES = [
   { id:"skincare", icon:"🧴", name:"Skincare / Aesthetic Spa",   desc:"Client consultations, skin assessments, beauty treatments" },
@@ -305,15 +348,24 @@ function LandingPage({ onLogin, onRegister }) {
 // LOGIN
 function LoginScreen({ brands, onAdminLogin, onBrandLogin, onRegister, onHome }) {
   const [email,setEmail]=useState("");const [pass,setPass]=useState("");const [err,setErr]=useState("");const [loading,setLoading]=useState(false);const [show,setShow]=useState(false);
-  const login=()=>{
+  const login=async ()=>{
     if(!email||!pass){setErr("Please enter your email and password.");return;}
     setLoading(true);setErr("");
-    setTimeout(()=>{
+    try {
+      // Check super admin first
       if(email.toLowerCase()===ADMIN_EMAIL&&pass===ADMIN_PASS){onAdminLogin();setLoading(false);return;}
-      const b=brands.find(x=>x.email.toLowerCase()===email.toLowerCase()&&x.password===pass);
-      if(b){if(b.status==="pending"){setErr("Your account is pending admin approval. You will be notified once approved.");setLoading(false);return;}if(b.status==="suspended"){setErr("Your account has been suspended. Please contact support@carehub.ng");setLoading(false);return;}onBrandLogin(b);setLoading(false);return;}
-      setErr("Incorrect email or password.");setLoading(false);
-    },800);
+      // Check real database
+      const b = await dbLoginBusiness(email.toLowerCase(), pass);
+      if(b){
+        if(b.status==="pending"){setErr("Your account is pending admin approval. You will be notified once approved.");setLoading(false);return;}
+        if(b.status==="suspended"){setErr("Your account has been suspended. Please contact support@carehub.ng");setLoading(false);return;}
+        onBrandLogin(b);setLoading(false);return;
+      }
+      setErr("Incorrect email or password. Please try again.");
+    } catch(e) {
+      setErr("Connection error. Please check your internet and try again.");
+    }
+    setLoading(false);
   };
   return(
     <div style={{minHeight:"100vh",display:"flex",alignItems:"center",justifyContent:"center",background:"#f9fafb",fontFamily:"system-ui,sans-serif",padding:"20px"}}>
@@ -475,7 +527,33 @@ function Registration({ onBack, onSubmitted }) {
           {step>1&&<GhostBtn onClick={()=>setStep(s=>s-1)} style={{flex:1,padding:"13px"}}>← Back</GhostBtn>}
           {step<5
             ?<button onClick={()=>setStep(s=>s+1)} disabled={!canNext()} style={{flex:1,padding:"13px",borderRadius:"12px",border:"none",background:canNext()?TEAL:"#e5e7eb",color:canNext()?"white":"#bbb",fontWeight:"800",fontSize:"14px",cursor:canNext()?"pointer":"not-allowed"}}>Continue →</button>
-            :<button onClick={()=>{onSubmitted&&onSubmitted(data);setDone(true);}} style={{flex:1,padding:"13px",borderRadius:"12px",border:"none",background:DARK,color:"white",fontWeight:"800",fontSize:"14px",cursor:"pointer"}}>Submit Registration →</button>}
+            :<button onClick={async ()=>{
+              try {
+                await dbRegisterBusiness({
+                  name: data.businessName,
+                  owner: ((data.firstName||"")+" "+(data.lastName||"")).trim(),
+                  email: data.ownerEmail,
+                  password: data.password,
+                  phone: data.ownerPhone||"",
+                  whatsapp: data.whatsapp||"",
+                  address: data.address||"",
+                  state: data.state||"",
+                  city: data.city||"",
+                  business_type: data.businessType||"skincare",
+                  hours: data.businessHours||"",
+                  maps_link: data.mapsLink||"",
+                  lat: parseFloat(data.lat)||0,
+                  lng: parseFloat(data.lng)||0,
+                  website: data.website||"",
+                  status: "pending",
+                  visible_on_carefind: data.visibleOnCareFind!==false
+                });
+                onSubmitted&&onSubmitted(data);
+                setDone(true);
+              } catch(e) {
+                alert("Registration failed. This email may already be registered. Please check and try again.");
+              }
+            }} style={{flex:1,padding:"13px",borderRadius:"12px",border:"none",background:DARK,color:"white",fontWeight:"800",fontSize:"14px",cursor:"pointer"}}>Submit Registration →</button>}
         </div>
       </div>
     </div>
@@ -484,10 +562,40 @@ function Registration({ onBack, onSubmitted }) {
 
 // ADMIN DASHBOARD
 function AdminDashboard({ onLogout }) {
-  const [brands,setBrands]=useState(INIT_BRANDS);const [team,setTeam]=useState([{id:1,name:"Sade Williams",role:"Support Agent",email:"sade@carehub.ng",status:"active",joined:"Jan 2025"},{id:2,name:"Kemi Fashola",role:"Brand Manager",email:"kemi@carehub.ng",status:"active",joined:"Mar 2025"}]);
+  const [brands,setBrands]=useState([]);const [team,setTeam]=useState([]);
+  const [loading,setLoading]=useState(true);
   const [tab,setTab]=useState("brands");const [sel,setSel]=useState(null);const [showInv,setShowInv]=useState(false);const [inv,setInv]=useState({name:"",email:"",role:"Support Agent"});const [toast,setToast]=useState("");
+
+  // Load data from Supabase on mount
+  useEffect(()=>{
+    loadAll();
+    // Auto refresh every 30 seconds to catch new registrations
+    const interval = setInterval(loadAll, 30000);
+    return ()=>clearInterval(interval);
+  },[]);
+
+  async function loadAll() {
+    try {
+      const [b, t] = await Promise.all([dbGetBusinesses(), dbGetTeam()]);
+      setBrands(b||[]);
+      setTeam(t||[]);
+    } catch(e) {
+      console.error("Load error:", e);
+    }
+    setLoading(false);
+  }
+
   const showToast=msg=>{setToast(msg);setTimeout(()=>setToast(""),3000);};
-  const updStatus=(id,status,msg)=>{setBrands(b=>b.map(x=>x.id===id?{...x,status}:x));setSel(null);showToast(msg);};
+  const updStatus=async (id,status,msg)=>{
+    try {
+      await dbUpdateStatus(id, status);
+      setBrands(b=>b.map(x=>x.id===id?{...x,status}:x));
+      setSel(null);
+      showToast(msg);
+    } catch(e) {
+      showToast("Error updating status. Please try again.");
+    }
+  };
   const pending=brands.filter(b=>b.status==="pending");const active=brands.filter(b=>b.status==="active");
   const sPill=s=>{if(s==="active")return<Pill label="Active" type="green"/>;if(s==="pending")return<Pill label="Pending" type="amber"/>;if(s==="suspended")return<Pill label="Suspended" type="red"/>;return<Pill label={s}/>;};
   const NAVS=[["brands","🏥","All Businesses"],["team","👥","My Team"],["analytics","📊","Analytics"],["settings","⚙️","Settings"]];
@@ -509,12 +617,16 @@ function AdminDashboard({ onLogout }) {
       </div>
       <div style={{flex:1,background:"#f9fafb",overflowY:"auto",padding:"28px 32px"}}>
         {tab==="brands"&&<>
-          <SectionHead title="Business Management" sub="Approve and manage all registered healthcare businesses"/>
+          <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:"20px",flexWrap:"wrap",gap:"10px"}}>
+            <div><div style={{fontSize:"20px",fontWeight:"900",color:"#111"}}>Business Management</div><div style={{fontSize:"13px",color:"#888",marginTop:"3px"}}>Approve and manage all registered healthcare businesses</div></div>
+            <button onClick={loadAll} style={{padding:"8px 16px",borderRadius:"10px",border:"1px solid #e5e7eb",background:"white",color:TEALC,fontWeight:"700",fontSize:"13px",cursor:"pointer"}}>🔄 Refresh</button>
+          </div>
+          {loading&&<div style={{textAlign:"center",padding:"40px",color:"#aaa"}}><div style={{fontSize:"32px",marginBottom:"8px"}}>⏳</div>Loading...</div>}
           <div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:"14px",marginBottom:"24px"}}>
             <StatCard icon="🏥" label="Total Businesses" value={brands.length}/>
             <StatCard icon="⏳" label="Pending Approval" value={pending.length} alert={pending.length>0}/>
             <StatCard icon="✅" label="Active" value={active.length}/>
-            <StatCard icon="🔍" label="On CareFind" value={brands.filter(b=>b.visibleOnCareFind&&b.status==="active").length} sub="Publicly listed"/>
+            <StatCard icon="🔍" label="On CareFind" value={brands.filter(b=>(b.visible_on_carefind||b.visibleOnCareFind)&&b.status==="active").length} sub="Publicly listed"/>
           </div>
           <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(130px,1fr))",gap:"10px",marginBottom:"20px"}}>
             {BUSINESS_TYPES.map(b=>(
@@ -527,7 +639,7 @@ function AdminDashboard({ onLogout }) {
           </div>
           {pending.length>0&&<div style={{marginBottom:"20px",padding:"14px 18px",borderRadius:"14px",background:"#fffbeb",border:"1px solid #fcd34d",display:"flex",alignItems:"flex-start",gap:"12px"}}>
             <span style={{fontSize:"20px"}}>🔔</span>
-            <div><div style={{fontWeight:"700",color:"#92400e",fontSize:"14px"}}>{pending.length} business{pending.length>1?"es":""} waiting for your approval!</div><div style={{fontSize:"12px",color:"#b45309",marginTop:"4px"}}>{pending.map(b=>businessIcon(b.type)+" "+b.name).join(" · ")}</div></div>
+            <div><div style={{fontWeight:"700",color:"#92400e",fontSize:"14px"}}>{pending.length} business{pending.length>1?"es":""} waiting for your approval!</div><div style={{fontSize:"12px",color:"#b45309",marginTop:"4px"}}>{pending.map(b=>businessIcon((b.business_type||(b.business_type||b.type)))+" "+b.name).join(" · ")}</div></div>
           </div>}
           <Card>
             <div style={{overflowX:"auto"}}>
@@ -535,11 +647,11 @@ function AdminDashboard({ onLogout }) {
                 <thead><tr style={{borderBottom:"1px solid #f5f5f5",background:"#fafafa"}}>{["Business","Type","Owner","WhatsApp","CareFind","Status","Actions"].map(h=><th key={h} style={{padding:"12px 16px",textAlign:"left",fontSize:"11px",fontWeight:"700",color:"#aaa",textTransform:"uppercase",whiteSpace:"nowrap"}}>{h}</th>)}</tr></thead>
                 <tbody>{brands.map(b=>(
                   <tr key={b.id} style={{borderBottom:"1px solid #f9f9f9",background:b.status==="pending"?"#fffdf5":"white"}}>
-                    <td style={{padding:"12px 16px"}}><div style={{display:"flex",alignItems:"center",gap:"10px"}}><div style={{width:"34px",height:"34px",borderRadius:"10px",background:TEAL,display:"flex",alignItems:"center",justifyContent:"center",fontSize:"16px"}}>{businessIcon(b.type)}</div><span style={{fontWeight:"700",fontSize:"13px"}}>{b.name}</span></div></td>
-                    <td style={{padding:"12px 16px"}}><Pill label={businessName(b.type).split("/")[0].trim()} type="teal"/></td>
+                    <td style={{padding:"12px 16px"}}><div style={{display:"flex",alignItems:"center",gap:"10px"}}><div style={{width:"34px",height:"34px",borderRadius:"10px",background:TEAL,display:"flex",alignItems:"center",justifyContent:"center",fontSize:"16px"}}>{businessIcon((b.business_type||(b.business_type||b.type)))}</div><span style={{fontWeight:"700",fontSize:"13px"}}>{b.name}</span></div></td>
+                    <td style={{padding:"12px 16px"}}><Pill label={businessName((b.business_type||(b.business_type||b.type))).split("/")[0].trim()} type="teal"/></td>
                     <td style={{padding:"12px 16px",fontSize:"13px",color:"#666"}}>{b.owner}</td>
                     <td style={{padding:"12px 16px",fontSize:"12px",color:"#25D366",fontWeight:"600"}}>{b.whatsapp?"💬 "+b.whatsapp:"--"}</td>
-                    <td style={{padding:"12px 16px"}}>{b.visibleOnCareFind?<Pill label="Listed" type="green"/>:<Pill label="Hidden"/>}</td>
+                    <td style={{padding:"12px 16px"}}>{(b.visible_on_carefind||b.visibleOnCareFind)?<Pill label="Listed" type="green"/>:<Pill label="Hidden"/>}</td>
                     <td style={{padding:"12px 16px"}}>{sPill(b.status)}</td>
                     <td style={{padding:"12px 16px"}}><div style={{display:"flex",gap:"6px",flexWrap:"wrap"}}>
                       <GhostBtn onClick={()=>setSel(b)}>View</GhostBtn>
@@ -564,7 +676,7 @@ function AdminDashboard({ onLogout }) {
                 </div>
                 <div style={{display:"flex",alignItems:"center",gap:"10px"}}>
                   <Pill label={m.status} type={m.status==="active"?"green":"amber"}/>
-                  <button onClick={()=>setTeam(prev=>prev.filter(x=>x.id!==m.id))} style={{padding:"6px 12px",borderRadius:"8px",border:"none",background:"#fef2f2",color:"#dc2626",fontWeight:"700",fontSize:"12px",cursor:"pointer"}}>Remove</button>
+                  <button onClick={async ()=>{try{await dbRemoveTeam(m.id);setTeam(prev=>prev.filter(x=>x.id!==m.id));showToast("Team member removed.");}catch(e){showToast("Error removing member.");}}} style={{padding:"6px 12px",borderRadius:"8px",border:"none",background:"#fef2f2",color:"#dc2626",fontWeight:"700",fontSize:"12px",cursor:"pointer"}}>Remove</button>
                 </div>
               </Card>
             ))}
@@ -585,7 +697,7 @@ function AdminDashboard({ onLogout }) {
             </Card>
             <Card style={{padding:"24px"}}>
               <div style={{fontWeight:"800",fontSize:"16px",marginBottom:"16px"}}>Status & CareFind</div>
-              {[["Active on CareHub",active.length,"#059669"],["Listed on CareFind",brands.filter(b=>b.visibleOnCareFind&&b.status==="active").length,"#0f766e"],["Pending Approval",pending.length,"#d97706"],["Suspended",brands.filter(b=>b.status==="suspended").length,"#dc2626"]].map(([l,v,c])=>(
+              {[["Active on CareHub",active.length,"#059669"],["Listed on CareFind",brands.filter(b=>(b.visible_on_carefind||b.visibleOnCareFind)&&b.status==="active").length,"#0f766e"],["Pending Approval",pending.length,"#d97706"],["Suspended",brands.filter(b=>b.status==="suspended").length,"#dc2626"]].map(([l,v,c])=>(
                 <div key={l} style={{display:"flex",alignItems:"center",justifyContent:"space-between",padding:"10px",borderRadius:"10px",background:"#fafafa",marginBottom:"8px"}}>
                   <div style={{display:"flex",alignItems:"center",gap:"8px"}}><div style={{width:"10px",height:"10px",borderRadius:"50%",background:c}}/><span style={{fontSize:"13px",color:"#555"}}>{l}</span></div>
                   <span style={{fontSize:"20px",fontWeight:"900"}}>{v}</span>
@@ -617,14 +729,14 @@ function AdminDashboard({ onLogout }) {
             </div>
           }>
           <div>
-            {[["Business",sel.name],["Type",businessIcon(sel.type)+" "+businessName(sel.type)],["Owner",sel.owner],["Email",sel.email],["Phone",sel.phone],["WhatsApp",sel.whatsapp||"Not set"],["Address",sel.address],["State",sel.state],["Hours",sel.hours||"Not set"],["CareFind",sel.visibleOnCareFind?"Listed":"Hidden"],["Registered",sel.date]].map(function(item){
+            {[["Business",sel.name],["Type",businessIcon(sel.type)+" "+businessName(sel.type)],["Owner",sel.owner],["Email",sel.email],["Phone",sel.phone],["WhatsApp",sel.whatsapp||"Not set"],["Address",sel.address],["State",sel.state],["Hours",sel.hours||"Not set"],["CareFind",(sel.visible_on_carefind||sel.visibleOnCareFind)?"Listed":"Hidden"],["Registered",sel.date]].map(function(item){
               return <div key={item[0]} style={{display:"flex",justifyContent:"space-between",padding:"8px 0",borderBottom:"1px solid #f9f9f9",fontSize:"13px"}}><span style={{color:"#888",fontWeight:"600"}}>{item[0]}</span><span style={{color:"#0f172a",textAlign:"right",maxWidth:"240px"}}>{item[1]}</span></div>;
             })}
           </div>
         </Modal>
       )}
       <Modal show={showInv} onClose={()=>setShowInv(false)} title="Invite Team Member"
-        footer={<><GhostBtn onClick={()=>setShowInv(false)} style={{flex:1,padding:"12px"}}>Cancel</GhostBtn><TealBtn onClick={()=>{if(inv.name&&inv.email){setTeam(prev=>[...prev,{id:prev.length+1,name:inv.name,role:inv.role,email:inv.email,status:"invited",joined:"--"}]);setInv({name:"",email:"",role:"Support Agent"});setShowInv(false);showToast("Invite sent!");}}} style={{flex:1,padding:"12px"}}>Send Invite</TealBtn></>}>
+        footer={<><GhostBtn onClick={()=>setShowInv(false)} style={{flex:1,padding:"12px"}}>Cancel</GhostBtn><TealBtn onClick={async ()=>{if(inv.name&&inv.email){try{await dbInviteTeam({name:inv.name,role:inv.role,email:inv.email,status:"invited"});const t=await dbGetTeam();setTeam(t||[]);setInv({name:"",email:"",role:"Support Agent"});setShowInv(false);showToast("Invite sent!");}catch(e){showToast("Error. Email may already exist.");}}}  } style={{flex:1,padding:"12px"}}>Send Invite</TealBtn></>}>
         <div style={{display:"flex",flexDirection:"column",gap:"14px"}}>
           <Inp label="Full Name" value={inv.name} onChange={v=>setInv({...inv,name:v})} placeholder="e.g. Sade Williams" required/>
           <Inp label="Email Address" value={inv.email} onChange={v=>setInv({...inv,email:v})} type="email" placeholder="sade@carehub.ng" required/>
@@ -701,7 +813,7 @@ function InventoryPage({ products, setProducts, brand }) {
       </div>
 
       {/* CareFind status banner */}
-      {brand&&brand.visibleOnCareFind&&(
+      {brand&&(brand.visible_on_carefind||brand.visibleOnCareFind)&&(
         <div style={{marginBottom:"20px",padding:"14px 18px",borderRadius:"14px",background:"#f0fdfa",border:"1px solid #ccfbf1",display:"flex",alignItems:"center",justifyContent:"space-between",gap:"12px",flexWrap:"wrap"}}>
           <div style={{display:"flex",alignItems:"center",gap:"12px"}}>
             <span style={{fontSize:"20px"}}>🔍</span>
@@ -773,18 +885,18 @@ function PublicProfilePage({ brand, products }) {
       <SectionHead title="Public Profile" sub="This is how your business appears on CareFind"/>
       <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"20px",marginBottom:"20px"}}>
         <StatCard icon="🔍" label="Products on CareFind" value={listedProds.filter(p=>p.stock>0).length} sub={String(listedProds.filter(p=>p.stock<=0).length)+" out of stock"}/>
-        <StatCard icon="👁" label="Profile Status" value={brand.visibleOnCareFind?"Live":"Hidden"} sub={brand.visibleOnCareFind?"Visible to patients searching nearby":"Not listed on CareFind"}/>
+        <StatCard icon="👁" label="Profile Status" value={(brand.visible_on_carefind||brand.visibleOnCareFind)?"Live":"Hidden"} sub={(brand.visible_on_carefind||brand.visibleOnCareFind)?"Visible to patients searching nearby":"Not listed on CareFind"}/>
       </div>
 
       {/* Profile preview */}
       <Card style={{marginBottom:"20px",overflow:"hidden"}}>
         <div style={{padding:"20px 24px",borderBottom:"1px solid #f0f0f0",display:"flex",alignItems:"center",justifyContent:"space-between",flexWrap:"wrap",gap:"12px"}}>
           <div style={{fontSize:"14px",fontWeight:"700",color:"#555"}}>🔍 CareFind Preview -- How patients see your profile</div>
-          <Pill label={brand.visibleOnCareFind?"Live on CareFind":"Hidden"} type={brand.visibleOnCareFind?"green":"gray"}/>
+          <Pill label={(brand.visible_on_carefind||brand.visibleOnCareFind)?"Live on CareFind":"Hidden"} type={(brand.visible_on_carefind||brand.visibleOnCareFind)?"green":"gray"}/>
         </div>
         <div style={{padding:"24px"}}>
           <div style={{display:"flex",alignItems:"flex-start",gap:"16px",marginBottom:"20px",flexWrap:"wrap"}}>
-            <div style={{width:"56px",height:"56px",borderRadius:"16px",background:TEAL,display:"flex",alignItems:"center",justifyContent:"center",fontSize:"28px",flexShrink:0}}>{businessIcon(brand.type)}</div>
+            <div style={{width:"56px",height:"56px",borderRadius:"16px",background:TEAL,display:"flex",alignItems:"center",justifyContent:"center",fontSize:"28px",flexShrink:0}}>{businessIcon((brand.business_type||brand.type))}</div>
             <div style={{flex:1}}>
               <div style={{fontSize:"20px",fontWeight:"900",color:"#0f172a"}}>{brand.name}</div>
               <div style={{fontSize:"13px",color:"#888",marginTop:"4px"}}>📍 {brand.address}{brand.city?" · "+brand.city:""}</div>
@@ -794,7 +906,7 @@ function PublicProfilePage({ brand, products }) {
                   style={{padding:"8px 16px",borderRadius:"10px",background:"#25D366",color:"white",fontWeight:"700",fontSize:"13px",textDecoration:"none",display:"inline-flex",alignItems:"center",gap:"6px"}}>
                   💬 WhatsApp
                 </a>
-                {brand.mapsLink&&<a href={brand.mapsLink} target="_blank" rel="noreferrer"
+                {(brand.maps_link||brand.mapsLink||"")&&<a href={(brand.maps_link||brand.mapsLink||"")} target="_blank" rel="noreferrer"
                   style={{padding:"8px 16px",borderRadius:"10px",border:"1px solid #e5e7eb",color:"#555",fontWeight:"600",fontSize:"13px",textDecoration:"none",display:"inline-flex",alignItems:"center",gap:"6px"}}>
                   📍 View on Map
                 </a>}
@@ -831,10 +943,10 @@ function PublicProfilePage({ brand, products }) {
         <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"16px"}}>
           <Inp label="WhatsApp Number" value={brand.whatsapp||""} onChange={()=>{}} placeholder="e.g. 2348012345678"/>
           <Inp label="Business Hours" value={brand.hours||""} onChange={()=>{}} placeholder="e.g. Mon-Sat 8am-8pm"/>
-          <Inp label="Google Maps Link" value={brand.mapsLink||""} onChange={()=>{}} placeholder="Paste Google Maps URL"/>
+          <Inp label="Google Maps Link" value={(brand.maps_link||brand.mapsLink||"")||""} onChange={()=>{}} placeholder="Paste Google Maps URL"/>
           <Inp label="GPS Latitude" value={String(brand.lat||"")} onChange={()=>{}} placeholder="e.g. 6.4474"/>
         </div>
-        <div style={{marginTop:"16px"}}><Toggle label="Visible on CareFind" desc="Allow patients to find your business on the public CareFind search platform" value={brand.visibleOnCareFind||false} onChange={()=>{}}/></div>
+        <div style={{marginTop:"16px"}}><Toggle label="Visible on CareFind" desc="Allow patients to find your business on the public CareFind search platform" value={(brand.visible_on_carefind||brand.visibleOnCareFind)||false} onChange={()=>{}}/></div>
         <TealBtn style={{marginTop:"16px",width:"100%",padding:"12px"}}>Save CareFind Settings</TealBtn>
       </Card>
     </div>
@@ -1005,7 +1117,7 @@ const NAV_ITEMS=[["dashboard","🏠","Dashboard"],["appointments","📅","Appoin
 
 function BusinessDashboard({ brand, onLogout }) {
   const [page,setPage]=useState("dashboard");const [products,setProducts]=useState(INIT_PRODUCTS);const [toast,setToast]=useState("");
-  const bType=brand.type||"skincare";const bIcon=businessIcon(bType);
+  const bType=(brand.business_type||brand.type||"skincare");const bIcon=businessIcon(bType);
 
   const renderPage=()=>{
     switch(page){
@@ -1018,7 +1130,7 @@ function BusinessDashboard({ brand, onLogout }) {
             <div style={{fontSize:"13px",opacity:0.6,marginTop:"4px"}}>{bIcon} {brand.name}</div>
             <div style={{display:"flex",gap:"8px",marginTop:"10px",flexWrap:"wrap"}}>
               <div style={{display:"inline-flex",alignItems:"center",gap:"6px",padding:"4px 12px",borderRadius:"20px",background:"rgba(20,184,166,0.2)",fontSize:"12px",color:"#14b8a6",fontWeight:"600"}}>{bIcon} {businessName(bType)}</div>
-              {brand.visibleOnCareFind&&<div style={{display:"inline-flex",alignItems:"center",gap:"6px",padding:"4px 12px",borderRadius:"20px",background:"rgba(20,184,166,0.2)",fontSize:"12px",color:"#14b8a6",fontWeight:"600"}}>🔍 Live on CareFind</div>}
+              {(brand.visible_on_carefind||brand.visibleOnCareFind)&&<div style={{display:"inline-flex",alignItems:"center",gap:"6px",padding:"4px 12px",borderRadius:"20px",background:"rgba(20,184,166,0.2)",fontSize:"12px",color:"#14b8a6",fontWeight:"600"}}>🔍 Live on CareFind</div>}
             </div>
           </div>
           <div style={{display:"grid",gridTemplateColumns:"repeat(2,1fr)",gap:"14px"}}>
@@ -1028,7 +1140,7 @@ function BusinessDashboard({ brand, onLogout }) {
             <StatCard icon="🔍" label="Products on CareFind" value={products.filter(p=>p.listOnCareFind&&p.stock>0).length} sub="Visible to patients searching nearby"/>
           </div>
           {/* CareFind quick status */}
-          {brand.visibleOnCareFind&&(
+          {(brand.visible_on_carefind||brand.visibleOnCareFind)&&(
             <div style={{padding:"16px 20px",borderRadius:"14px",background:"#f0fdfa",border:"1px solid #ccfbf1",display:"flex",alignItems:"center",gap:"16px",flexWrap:"wrap"}}>
               <div style={{fontSize:"24px"}}>🔍</div>
               <div style={{flex:1}}>
@@ -1059,7 +1171,7 @@ function BusinessDashboard({ brand, onLogout }) {
       case "expenses":return(<div><SectionHead title="Expenses" sub="Track all spending" btn="+ Log Expense"/><div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:"14px",marginBottom:"20px"}}><StatCard icon="💸" label="Total This Month" value={fmt(EXPENSES.reduce((s,e)=>s+e.amount,0))}/><StatCard icon="🏠" label="Biggest" value="Rent"/><StatCard icon="📊" label="vs Revenue" value="-61%"/></div><Card><div style={{overflowX:"auto"}}><table style={{width:"100%",borderCollapse:"collapse"}}><thead><tr style={{borderBottom:"1px solid #f5f5f5",background:"#fafafa"}}>{["Category","Description","Amount","Date"].map(h=><th key={h} style={{padding:"12px 16px",textAlign:"left",fontSize:"11px",fontWeight:"700",color:"#aaa",textTransform:"uppercase"}}>{h}</th>)}</tr></thead><tbody>{EXPENSES.map(e=><tr key={e.id} style={{borderBottom:"1px solid #f9f9f9"}}><td style={{padding:"12px 16px"}}><Pill label={e.cat} type="teal"/></td><td style={{padding:"12px 16px",fontSize:"13px",color:"#555"}}>{e.desc}</td><td style={{padding:"12px 16px",fontSize:"13px",fontWeight:"900"}}>{fmt(e.amount)}</td><td style={{padding:"12px 16px",fontSize:"12px",color:"#aaa"}}>{e.date}</td></tr>)}</tbody></table></div></Card></div>);
       case "debts":return(<div><SectionHead title="Debt Management" sub="Track money owed" btn="+ Record Debt"/><div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"14px",marginBottom:"20px"}}><Card style={{padding:"18px",borderLeft:"4px solid #059669"}}><div style={{fontSize:"12px",color:"#888",fontWeight:"600"}}>Clients Owe You</div><div style={{fontSize:"24px",fontWeight:"900",marginTop:"4px"}}>₦23,500</div></Card><Card style={{padding:"18px",borderLeft:"4px solid #ef4444"}}><div style={{fontSize:"12px",color:"#888",fontWeight:"600"}}>You Owe Suppliers</div><div style={{fontSize:"24px",fontWeight:"900",marginTop:"4px"}}>₦45,000</div></Card></div><Card><div style={{overflowX:"auto"}}><table style={{width:"100%",borderCollapse:"collapse"}}><thead><tr style={{borderBottom:"1px solid #f5f5f5",background:"#fafafa"}}>{["Direction","Party","Amount","Due","Status"].map(h=><th key={h} style={{padding:"12px 16px",textAlign:"left",fontSize:"11px",fontWeight:"700",color:"#aaa",textTransform:"uppercase"}}>{h}</th>)}</tr></thead><tbody>{DEBTS.map(d=><tr key={d.id} style={{borderBottom:"1px solid #f9f9f9"}}><td style={{padding:"12px 16px"}}><Pill label={d.dir==="owes_us"?"↓ Owed to us":"↑ We owe"} type={d.dir==="owes_us"?"green":"red"}/></td><td style={{padding:"12px 16px",fontSize:"13px",fontWeight:"700"}}>{d.party}</td><td style={{padding:"12px 16px",fontSize:"13px",fontWeight:"900"}}>{fmt(d.amount)}</td><td style={{padding:"12px 16px",fontSize:"12px",color:"#aaa"}}>{d.due}</td><td style={{padding:"12px 16px"}}><Pill label={d.status} type={d.status==="overdue"?"red":"amber"}/></td></tr>)}</tbody></table></div></Card></div>);
       case "reports":return(<div><SectionHead title="Reports & Analytics"/><div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:"14px",marginBottom:"20px"}}><StatCard icon="💰" label="Total Revenue" value="₦1,389,500"/><StatCard icon="💸" label="Total Expenses" value="₦935,000"/><StatCard icon="📈" label="Net Profit" value="₦454,500"/></div><Card style={{padding:"24px",marginBottom:"20px"}}><div style={{fontWeight:"800",fontSize:"16px",marginBottom:"20px"}}>Revenue vs Expenses (6 months)</div>{["Jan","Feb","Mar","Apr","May","Jun"].map((m,i)=>{const rev=[180000,210000,195000,250000,270000,284500];const exp=[120000,135000,140000,160000,180000,200000];return<div key={m} style={{display:"flex",alignItems:"center",gap:"12px",marginBottom:"12px"}}><span style={{width:"28px",fontSize:"12px",color:"#aaa"}}>{m}</span><div style={{flex:1}}><div style={{display:"flex",alignItems:"center",gap:"8px",marginBottom:"3px"}}><div style={{height:"8px",borderRadius:"4px",background:TEAL,width:((rev[i]/284500)*100)+"%",minWidth:"4px"}}/><span style={{fontSize:"11px",color:"#888"}}>₦{(rev[i]/1000).toFixed(0)}k</span></div><div style={{display:"flex",alignItems:"center",gap:"8px"}}><div style={{height:"8px",borderRadius:"4px",background:"#fecaca",width:((exp[i]/284500)*100)+"%",minWidth:"4px"}}/><span style={{fontSize:"11px",color:"#aaa"}}>₦{(exp[i]/1000).toFixed(0)}k</span></div></div></div>;})}  </Card><div style={{display:"flex",gap:"10px"}}>{["Export PDF","Export Excel","Print Report"].map(l=><GhostBtn key={l}>{l}</GhostBtn>)}</div></div>);
-      case "settings":return(<div><SectionHead title="Settings"/><Card style={{padding:"28px",maxWidth:"520px"}}><div style={{marginBottom:"20px",padding:"14px",borderRadius:"12px",background:"#f0fdfa",border:"1px solid #ccfbf1",display:"flex",alignItems:"center",gap:"12px"}}><div style={{fontSize:"28px"}}>{bIcon}</div><div><div style={{fontWeight:"800",fontSize:"14px",color:"#0f172a"}}>{businessName(bType)}</div><div style={{fontSize:"12px",color:"#888",marginTop:"2px"}}>Your business type determines your consultation form</div></div></div>{[["Business Name",brand.name],["Owner Name",brand.owner],["Email",brand.email],["Phone",brand.phone],["WhatsApp",brand.whatsapp||""],["Business Hours",brand.hours||""],["Address",brand.address]].map(([l,v])=>(<div key={l} style={{marginBottom:"14px"}}><div style={{fontSize:"11px",fontWeight:"700",color:"#666",marginBottom:"6px"}}>{l}</div><input defaultValue={v} style={{width:"100%",padding:"10px 14px",borderRadius:"10px",border:"1px solid #e5e7eb",fontSize:"13px",outline:"none",boxSizing:"border-box"}}/></div>))}<Toggle label="Visible on CareFind" desc="Allow patients to find your business on the public CareFind search platform" value={brand.visibleOnCareFind||false} onChange={()=>{}}/><TealBtn style={{width:"100%",padding:"12px",marginTop:"16px"}}>Save Changes</TealBtn></Card></div>);
+      case "settings":return(<div><SectionHead title="Settings"/><Card style={{padding:"28px",maxWidth:"520px"}}><div style={{marginBottom:"20px",padding:"14px",borderRadius:"12px",background:"#f0fdfa",border:"1px solid #ccfbf1",display:"flex",alignItems:"center",gap:"12px"}}><div style={{fontSize:"28px"}}>{bIcon}</div><div><div style={{fontWeight:"800",fontSize:"14px",color:"#0f172a"}}>{businessName(bType)}</div><div style={{fontSize:"12px",color:"#888",marginTop:"2px"}}>Your business type determines your consultation form</div></div></div>{[["Business Name",brand.name],["Owner Name",brand.owner],["Email",brand.email],["Phone",brand.phone],["WhatsApp",brand.whatsapp||""],["Business Hours",brand.hours||""],["Address",brand.address]].map(([l,v])=>(<div key={l} style={{marginBottom:"14px"}}><div style={{fontSize:"11px",fontWeight:"700",color:"#666",marginBottom:"6px"}}>{l}</div><input defaultValue={v} style={{width:"100%",padding:"10px 14px",borderRadius:"10px",border:"1px solid #e5e7eb",fontSize:"13px",outline:"none",boxSizing:"border-box"}}/></div>))}<Toggle label="Visible on CareFind" desc="Allow patients to find your business on the public CareFind search platform" value={(brand.visible_on_carefind||brand.visibleOnCareFind)||false} onChange={()=>{}}/><TealBtn style={{width:"100%",padding:"12px",marginTop:"16px"}}>Save Changes</TealBtn></Card></div>);
       default:return(<div style={{display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",height:"60vh",textAlign:"center"}}><div style={{fontSize:"56px",marginBottom:"16px"}}>🔨</div><div style={{fontSize:"20px",fontWeight:"800",marginBottom:"8px"}}>{(NAV_ITEMS.find(n=>n[0]===page)||[])[2]||page}</div><div style={{fontSize:"14px",color:"#aaa"}}>Coming soon</div></div>);
     }
   };
@@ -1077,7 +1189,7 @@ function BusinessDashboard({ brand, onLogout }) {
           {NAV_ITEMS.map(([id,icon,label])=>(
             <button key={id} onClick={()=>setPage(id)} style={{width:"100%",display:"flex",alignItems:"center",gap:"8px",padding:"9px 10px",borderRadius:"10px",border:"none",cursor:"pointer",fontWeight:"600",fontSize:"12px",marginBottom:"1px",textAlign:"left",background:page===id?"rgba(20,184,166,0.15)":"transparent",color:page===id?"#14b8a6":"rgba(255,255,255,0.55)"}}>
               <span style={{fontSize:"15px"}}>{icon}</span>{label}
-              {id==="carefind"&&brand.visibleOnCareFind&&<span style={{marginLeft:"auto",width:"6px",height:"6px",borderRadius:"50%",background:"#14b8a6",flexShrink:0}}/>}
+              {id==="carefind"&&(brand.visible_on_carefind||brand.visibleOnCareFind)&&<span style={{marginLeft:"auto",width:"6px",height:"6px",borderRadius:"50%",background:"#14b8a6",flexShrink:0}}/>}
             </button>
           ))}
         </nav>
