@@ -28,11 +28,11 @@ const INIT_PRODUCTS = [
 ];
 
 const INIT_BRANDS = [
-  { id:1, name:"Four Sisters Aesthetic Spa", owner:"Amara Okonkwo",    email:"amara@foursisters.ng",  phone:"08012345678", whatsapp:"2348012345678", address:"14 Awolowo Road, Ikoyi, Lagos",      state:"Lagos",  city:"Ikoyi",    lat:6.4474, lng:3.4359, hours:"Mon–Sat 9am–7pm", status:"active",   date:"Jun 10 2025", password:"brand123", type:"skincare", visibleOnCareFind:true,  mapsLink:"https://maps.google.com" },
-  { id:2, name:"HealthPlus Pharmacy Ikeja",  owner:"Chidinma Eze",     email:"chidinma@healthplus.ng",phone:"08098765432", whatsapp:"2348098765432", address:"7 Allen Avenue, Ikeja, Lagos",         state:"Lagos",  city:"Ikeja",    lat:6.6018, lng:3.3515, hours:"Mon–Sun 8am–9pm", status:"pending",  date:"Jun 22 2025", password:"brand456", type:"pharmacy", visibleOnCareFind:true,  mapsLink:"" },
-  { id:3, name:"Lagos City Clinic",          owner:"Dr. Fatima Bello", email:"fatima@lagoscity.ng",   phone:"09011223344", whatsapp:"2349011223344", address:"3 Marina Road, Lagos Island",          state:"Lagos",  city:"Lagos Island",lat:6.4541,lng:3.3947,hours:"Mon–Fri 8am–6pm", status:"pending",  date:"Jun 23 2025", password:"brand789", type:"hospital", visibleOnCareFind:true,  mapsLink:"" },
-  { id:4, name:"Lumina Aesthetics",          owner:"Blessing Osei",    email:"blessing@lumina.ng",    phone:"08155667788", whatsapp:"2348155667788", address:"22 GRA Phase 2, Port Harcourt",        state:"Rivers", city:"Port Harcourt",lat:4.8156,lng:7.0498,hours:"Tue–Sun 10am–6pm",status:"active",  date:"Jun 5 2025",  password:"brand321", type:"skincare", visibleOnCareFind:true,  mapsLink:"" },
-  { id:5, name:"CarePoint Pharmacy",         owner:"Kemi Adeyemi",     email:"kemi@carepoint.ng",     phone:"07033445566", whatsapp:"2347033445566", address:"9 Bodija Market Road, Ibadan",         state:"Oyo",    city:"Ibadan",   lat:7.3775, lng:3.9470, hours:"Mon–Sat 8am–8pm", status:"active",   date:"May 28 2025", password:"brand654", type:"pharmacy", visibleOnCareFind:true,  mapsLink:"" },
+  { id:1, name:"Four Sisters Aesthetic Spa", owner:"Amara Okonkwo",    email:"amara@foursisters.ng",  phone:"08012345678", whatsapp:"2348012345678", address:"14 Awolowo Road, Ikoyi, Lagos",      state:"Lagos",  city:"Ikoyi",    lat:6.4474, lng:3.4359, hours:"Mon-Sat 9am-7pm", status:"active",   date:"Jun 10 2025", password:"brand123", type:"skincare", visibleOnCareFind:true,  mapsLink:"https://maps.google.com" },
+  { id:2, name:"HealthPlus Pharmacy Ikeja",  owner:"Chidinma Eze",     email:"chidinma@healthplus.ng",phone:"08098765432", whatsapp:"2348098765432", address:"7 Allen Avenue, Ikeja, Lagos",         state:"Lagos",  city:"Ikeja",    lat:6.6018, lng:3.3515, hours:"Mon-Sun 8am-9pm", status:"pending",  date:"Jun 22 2025", password:"brand456", type:"pharmacy", visibleOnCareFind:true,  mapsLink:"" },
+  { id:3, name:"Lagos City Clinic",          owner:"Dr. Fatima Bello", email:"fatima@lagoscity.ng",   phone:"09011223344", whatsapp:"2349011223344", address:"3 Marina Road, Lagos Island",          state:"Lagos",  city:"Lagos Island",lat:6.4541,lng:3.3947,hours:"Mon-Fri 8am-6pm", status:"pending",  date:"Jun 23 2025", password:"brand789", type:"hospital", visibleOnCareFind:true,  mapsLink:"" },
+  { id:4, name:"Lumina Aesthetics",          owner:"Blessing Osei",    email:"blessing@lumina.ng",    phone:"08155667788", whatsapp:"2348155667788", address:"22 GRA Phase 2, Port Harcourt",        state:"Rivers", city:"Port Harcourt",lat:4.8156,lng:7.0498,hours:"Tue-Sun 10am-6pm",status:"active",  date:"Jun 5 2025",  password:"brand321", type:"skincare", visibleOnCareFind:true,  mapsLink:"" },
+  { id:5, name:"CarePoint Pharmacy",         owner:"Kemi Adeyemi",     email:"kemi@carepoint.ng",     phone:"07033445566", whatsapp:"2347033445566", address:"9 Bodija Market Road, Ibadan",         state:"Oyo",    city:"Ibadan",   lat:7.3775, lng:3.9470, hours:"Mon-Sat 8am-8pm", status:"active",   date:"May 28 2025", password:"brand654", type:"pharmacy", visibleOnCareFind:true,  mapsLink:"" },
 ];
 
 const APPOINTMENTS = [
@@ -177,12 +177,12 @@ function Toggle({ label, desc, value, onChange }) {
 // LANDING PAGE
 function LandingPage({ onLogin, onRegister }) {
   const features=[
-    {icon:"📋",title:"Smart Consultations",desc:"Forms tailored to your business — pharmacy, clinic, spa, dental, and more"},
+    {icon:"📋",title:"Smart Consultations",desc:"Forms tailored to your business -- pharmacy, clinic, spa, dental, and more"},
     {icon:"📦",title:"Inventory Management",desc:"Track stock in real time. Alerts when products run low."},
     {icon:"🛒",title:"Point of Sale",desc:"Fast sales with receipts, discounts, cash, transfer and POS"},
     {icon:"📅",title:"Appointments",desc:"Online booking for clients. Calendar for your team."},
     {icon:"💰",title:"Finance & Accounting",desc:"Expenses, debts, profit and loss at a glance"},
-    {icon:"👥",title:"Client / Patient CRM",desc:"Complete records — visits, purchases, history, allergies"},
+    {icon:"👥",title:"Client / Patient CRM",desc:"Complete records -- visits, purchases, history, allergies"},
     {icon:"📊",title:"Reports & Analytics",desc:"Revenue, top services, stock value and growth"},
     {icon:"🔍",title:"CareFind Integration",desc:"Your products and services listed publicly so patients can find you nearby"},
     {icon:"👤",title:"Staff Management",desc:"Invite team, assign roles, control access"},
@@ -205,7 +205,7 @@ function LandingPage({ onLogin, onRegister }) {
           <span style={{color:"#14b8a6",fontSize:"12px",fontWeight:"700"}}>🇳🇬 Built for Nigerian Healthcare Businesses</span>
         </div>
         <h1 style={{fontSize:"clamp(28px,5vw,52px)",fontWeight:"900",color:"white",margin:"0 0 16px",lineHeight:"1.15"}}>One Platform.<br/><span style={{color:"#14b8a6"}}>Every Healthcare Business.</span></h1>
-        <p style={{fontSize:"17px",color:"rgba(255,255,255,0.65)",maxWidth:"540px",margin:"0 auto 36px",lineHeight:"1.7"}}>CareHub gives pharmacies, clinics, spas, dental practices, and wellness centers everything they need — plus gets them discovered by patients searching nearby.</p>
+        <p style={{fontSize:"17px",color:"rgba(255,255,255,0.65)",maxWidth:"540px",margin:"0 auto 36px",lineHeight:"1.7"}}>CareHub gives pharmacies, clinics, spas, dental practices, and wellness centers everything they need -- plus gets them discovered by patients searching nearby.</p>
         <div style={{display:"flex",gap:"12px",justifyContent:"center",flexWrap:"wrap",marginBottom:"48px"}}>
           <button onClick={onRegister} style={{padding:"14px 36px",borderRadius:"14px",border:"none",background:TEAL,color:"white",fontWeight:"800",fontSize:"16px",cursor:"pointer"}}>Start Free Today →</button>
           <button onClick={onLogin} style={{padding:"14px 36px",borderRadius:"14px",border:"1px solid rgba(255,255,255,0.2)",background:"transparent",color:"white",fontWeight:"700",fontSize:"16px",cursor:"pointer"}}>Sign In</button>
@@ -223,11 +223,11 @@ function LandingPage({ onLogin, onRegister }) {
       <div style={{padding:"48px 32px",background:"#f0fdfa",borderBottom:"1px solid #ccfbf1"}}>
         <div style={{maxWidth:"860px",margin:"0 auto",display:"grid",gridTemplateColumns:"1fr 1fr",gap:"40px",alignItems:"center"}}>
           <div>
-            <div style={{fontSize:"13px",fontWeight:"700",color:TEALC,marginBottom:"8px",textTransform:"uppercase",letterSpacing:"1px"}}>Coming Soon — CareFind</div>
+            <div style={{fontSize:"13px",fontWeight:"700",color:TEALC,marginBottom:"8px",textTransform:"uppercase",letterSpacing:"1px"}}>Coming Soon -- CareFind</div>
             <div style={{fontSize:"28px",fontWeight:"900",color:"#0f172a",marginBottom:"12px"}}>Get discovered by patients searching for your products</div>
-            <div style={{fontSize:"14px",color:"#555",lineHeight:"1.8",marginBottom:"20px"}}>When you add products to your CareHub inventory, they automatically appear on CareFind — a public search platform where patients search for medicines, services, and healthcare businesses near them.</div>
+            <div style={{fontSize:"14px",color:"#555",lineHeight:"1.8",marginBottom:"20px"}}>When you add products to your CareHub inventory, they automatically appear on CareFind -- a public search platform where patients search for medicines, services, and healthcare businesses near them.</div>
             <div style={{display:"flex",flexDirection:"column",gap:"10px"}}>
-              {[["🔍","Patient searches "Amoxicillin 500mg""],["📍","CareFind shows pharmacies near them with it in stock"],["💬","Patient taps WhatsApp to contact your pharmacy directly"],["✅","Your stock updates automatically when you make a sale"]].map(([i,t])=>(
+              {[["🔍","Patient searches Amoxicillin 500mg"],["📍","CareFind shows pharmacies near them with it in stock"],["💬","Patient taps WhatsApp to contact your pharmacy directly"],["✅","Your stock updates automatically when you make a sale"]].map(([i,t])=>(
                 <div key={t} style={{display:"flex",alignItems:"center",gap:"10px",fontSize:"13px",color:"#555"}}>
                   <span style={{fontSize:"18px"}}>{i}</span>{t}
                 </div>
@@ -235,7 +235,7 @@ function LandingPage({ onLogin, onRegister }) {
             </div>
           </div>
           <div style={{background:"white",borderRadius:"20px",padding:"24px",border:"1px solid #ccfbf1",boxShadow:"0 4px 20px rgba(15,118,110,0.1)"}}>
-            <div style={{fontSize:"13px",fontWeight:"700",color:TEALC,marginBottom:"16px"}}>🔍 CareFind — Patient View</div>
+            <div style={{fontSize:"13px",fontWeight:"700",color:TEALC,marginBottom:"16px"}}>🔍 CareFind -- Patient View</div>
             <input readOnly value="Amoxicillin 500mg" style={{width:"100%",padding:"10px 14px",borderRadius:"10px",border:"1px solid #e5e7eb",fontSize:"13px",marginBottom:"12px",boxSizing:"border-box"}}/>
             {[
               {name:"HealthPlus Pharmacy, Ikeja",dist:"0.8 km",stock:"In Stock",price:"₦1,500"},
@@ -276,7 +276,7 @@ function LandingPage({ onLogin, onRegister }) {
       <div style={{padding:"72px 32px",background:"#0f172a"}}>
         <div style={{textAlign:"center",marginBottom:"48px"}}><div style={{fontSize:"13px",fontWeight:"700",color:"#14b8a6",marginBottom:"8px",textTransform:"uppercase",letterSpacing:"1px"}}>Testimonials</div><div style={{fontSize:"32px",fontWeight:"900",color:"white"}}>Trusted by healthcare businesses across Nigeria</div></div>
         <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(260px,1fr))",gap:"20px",maxWidth:"900px",margin:"0 auto"}}>
-          {[{name:"Amara Okonkwo",biz:"Four Sisters Aesthetic Spa, Lagos",text:"CareHub transformed how we run our spa. Consultations, inventory, and POS all in one place."},{name:"Chidinma Eze",biz:"HealthPlus Pharmacy, Ikeja",text:"As a pharmacist, the consultation module is exactly what we needed. Patient records and dispensing — all seamless."},{name:"Dr. Fatima Bello",biz:"Lagos City Clinic",text:"The hospital workflow is outstanding. No duplicate data entry between departments."}].map(t=>(
+          {[{name:"Amara Okonkwo",biz:"Four Sisters Aesthetic Spa, Lagos",text:"CareHub transformed how we run our spa. Consultations, inventory, and POS all in one place."},{name:"Chidinma Eze",biz:"HealthPlus Pharmacy, Ikeja",text:"As a pharmacist, the consultation module is exactly what we needed. Patient records and dispensing -- all seamless."},{name:"Dr. Fatima Bello",biz:"Lagos City Clinic",text:"The hospital workflow is outstanding. No duplicate data entry between departments."}].map(t=>(
             <div key={t.name} style={{background:"rgba(255,255,255,0.05)",border:"1px solid rgba(255,255,255,0.1)",borderRadius:"16px",padding:"24px"}}>
               <div style={{display:"flex",gap:"2px",marginBottom:"12px"}}>{[1,2,3,4,5].map(i=><span key={i} style={{color:"#fbbf24",fontSize:"16px"}}>★</span>)}</div>
               <div style={{fontSize:"14px",color:"rgba(255,255,255,0.8)",lineHeight:"1.7",marginBottom:"16px"}}>"{t.text}"</div>
@@ -341,7 +341,7 @@ function LoginScreen({ brands, onAdminLogin, onBrandLogin, onRegister, onHome })
         </Card>
         <div style={{textAlign:"center",marginTop:"20px"}}>
           <div style={{fontSize:"13px",color:"#888",marginBottom:"10px"}}>Don't have an account?</div>
-          <button onClick={onRegister} style={{width:"100%",padding:"13px",borderRadius:"12px",border:"2px solid #0f766e",background:"transparent",color:"#0f766e",fontWeight:"800",fontSize:"14px",cursor:"pointer"}}>✍️ Register Your Business — Free</button>
+          <button onClick={onRegister} style={{width:"100%",padding:"13px",borderRadius:"12px",border:"2px solid #0f766e",background:"transparent",color:"#0f766e",fontWeight:"800",fontSize:"14px",cursor:"pointer"}}>✍️ Register Your Business -- Free</button>
         </div>
       </div>
     </div>
@@ -368,7 +368,7 @@ function Registration({ onBack, onSubmitted }) {
         <div style={{fontSize:"22px",fontWeight:"900",marginBottom:"8px"}}>Registration Submitted!</div>
         <div style={{fontSize:"14px",color:"#888",lineHeight:"1.8",marginBottom:"24px"}}>Thank you <strong>{data.firstName}</strong>! Your business <strong>{data.businessName}</strong> has been submitted. Admin will review within 24 hours.</div>
         <div style={{background:"#f0fdfa",borderRadius:"12px",padding:"16px",marginBottom:"24px",textAlign:"left"}}>
-          {[["✅","Registration submitted"],["⏳","Admin review in progress"],["⬜","You receive approval notification"],["⬜","Dashboard unlocked — products visible on CareFind"]].map(([i,l])=>(
+          {[["✅","Registration submitted"],["⏳","Admin review in progress"],["⬜","You receive approval notification"],["⬜","Dashboard unlocked -- products visible on CareFind"]].map(([i,l])=>(
             <div key={l} style={{display:"flex",gap:"10px",marginBottom:"8px",fontSize:"13px",color:i==="✅"?"#059669":i==="⏳"?"#d97706":"#bbb"}}><span>{i}</span><span>{l}</span></div>
           ))}
         </div>
@@ -403,7 +403,7 @@ function Registration({ onBack, onSubmitted }) {
       <div style={{maxWidth:"540px",margin:"0 auto"}}>
         <div style={{display:"flex",alignItems:"center",gap:"12px",marginBottom:"24px"}}>
           <button onClick={()=>setStep(s=>s-1)} style={{width:"36px",height:"36px",borderRadius:"10px",background:"white",border:"1px solid #e5e7eb",cursor:"pointer",fontSize:"18px",display:"flex",alignItems:"center",justifyContent:"center"}}>←</button>
-          <div><div style={{fontWeight:"900",fontSize:"18px",color:"#0f172a"}}>Register {businessIcon(data.businessType)} {businessName(data.businessType)}</div><div style={{fontSize:"12px",color:"#aaa"}}>Step {step} of {STEPS.length} — {STEPS[step-1]}</div></div>
+          <div><div style={{fontWeight:"900",fontSize:"18px",color:"#0f172a"}}>Register {businessIcon(data.businessType)} {businessName(data.businessType)}</div><div style={{fontSize:"12px",color:"#aaa"}}>Step {step} of {STEPS.length} -- {STEPS[step-1]}</div></div>
         </div>
         <div style={{height:"6px",background:"#e5e7eb",borderRadius:"3px",overflow:"hidden",marginBottom:"24px"}}><div style={{height:"100%",width:`${(step/STEPS.length)*100}%`,background:TEAL,borderRadius:"3px",transition:"width 0.4s"}}/></div>
         <Card style={{padding:"24px",marginBottom:"16px"}}>
@@ -418,11 +418,11 @@ function Registration({ onBack, onSubmitted }) {
           {step===2&&<div style={{display:"flex",flexDirection:"column",gap:"14px"}}>
             <div style={{fontSize:"17px",fontWeight:"800",color:"#0f172a"}}>Contact & Location for CareFind</div>
             <div style={{padding:"12px",borderRadius:"10px",background:"#f0fdfa",border:"1px solid #ccfbf1",fontSize:"12px",color:TEALC,lineHeight:"1.6"}}>
-              🔍 This information will be shown to patients who find your business on CareFind — the public search platform connected to CareHub.
+              🔍 This information will be shown to patients who find your business on CareFind -- the public search platform connected to CareHub.
             </div>
             {inp("WhatsApp Number","whatsapp","text","e.g. 08012345678",true)}
             <div style={{fontSize:"11px",color:"#888",marginTop:"-8px"}}>Patients will tap this to contact you directly on WhatsApp</div>
-            {inp("Business Hours","businessHours","text","e.g. Mon–Sat 8am–8pm, Sun 10am–4pm",true)}
+            {inp("Business Hours","businessHours","text","e.g. Mon-Sat 8am-8pm, Sun 10am-4pm",true)}
             {inp("Google Maps Link (optional)","mapsLink","text","Paste your Google Maps link here")}
             <div>
               <div style={{fontSize:"11px",fontWeight:"700",color:"#666",marginBottom:"6px"}}>GPS Coordinates (optional)</div>
@@ -441,12 +441,12 @@ function Registration({ onBack, onSubmitted }) {
             <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"12px"}}>{inp("First Name","firstName","text","Chidinma",true)}{inp("Last Name","lastName","text","Eze",true)}</div>
             {inp("Your Email (used to log in)","ownerEmail","email","chidinma@gmail.com",true)}
             {inp("Your Phone","ownerPhone","text","08099887766",true)}
-            {sel("Years in Business","yearsInBusiness",["Less than 1 year","1–2 years","3–5 years","More than 5 years"])}
-            {sel("Number of Staff","staffCount",["Just me (solo)","2–5 staff","6–10 staff","More than 10"])}
+            {sel("Years in Business","yearsInBusiness",["Less than 1 year","1-2 years","3-5 years","More than 5 years"])}
+            {sel("Number of Staff","staffCount",["Just me (solo)","2-5 staff","6-10 staff","More than 10"])}
           </div>}
           {step===4&&<div style={{display:"flex",flexDirection:"column",gap:"14px"}}>
             <div style={{fontSize:"17px",fontWeight:"800",color:"#0f172a"}}>Create Your Password</div>
-            <div style={{padding:"12px",borderRadius:"10px",background:"#f0fdfa",border:"1px solid #ccfbf1"}}><div style={{fontSize:"11px",color:"#888"}}>Login email:</div><div style={{fontSize:"14px",fontWeight:"700",color:"#0f172a",marginTop:"2px"}}>{data.ownerEmail||"—"}</div></div>
+            <div style={{padding:"12px",borderRadius:"10px",background:"#f0fdfa",border:"1px solid #ccfbf1"}}><div style={{fontSize:"11px",color:"#888"}}>Login email:</div><div style={{fontSize:"14px",fontWeight:"700",color:"#0f172a",marginTop:"2px"}}>{data.ownerEmail||"--"}</div></div>
             {inp("Password","password","password","Create a strong password",true)}
             {inp("Confirm Password","confirmPassword","password","Repeat your password",true)}
             {data.password&&data.confirmPassword&&<div style={{fontSize:"12px",fontWeight:"700",color:data.password===data.confirmPassword?"#059669":"#ef4444"}}>{data.password===data.confirmPassword?"✓ Passwords match":"✕ Passwords do not match"}</div>}
@@ -538,7 +538,7 @@ function AdminDashboard({ onLogout }) {
                     <td style={{padding:"12px 16px"}}><div style={{display:"flex",alignItems:"center",gap:"10px"}}><div style={{width:"34px",height:"34px",borderRadius:"10px",background:TEAL,display:"flex",alignItems:"center",justifyContent:"center",fontSize:"16px"}}>{businessIcon(b.type)}</div><span style={{fontWeight:"700",fontSize:"13px"}}>{b.name}</span></div></td>
                     <td style={{padding:"12px 16px"}}><Pill label={businessName(b.type).split("/")[0].trim()} type="teal"/></td>
                     <td style={{padding:"12px 16px",fontSize:"13px",color:"#666"}}>{b.owner}</td>
-                    <td style={{padding:"12px 16px",fontSize:"12px",color:"#25D366",fontWeight:"600"}}>{b.whatsapp?"💬 "+b.whatsapp:"—"}</td>
+                    <td style={{padding:"12px 16px",fontSize:"12px",color:"#25D366",fontWeight:"600"}}>{b.whatsapp?"💬 "+b.whatsapp:"--"}</td>
                     <td style={{padding:"12px 16px"}}>{b.visibleOnCareFind?<Pill label="Listed" type="green"/>:<Pill label="Hidden"/>}</td>
                     <td style={{padding:"12px 16px"}}>{sPill(b.status)}</td>
                     <td style={{padding:"12px 16px"}}><div style={{display:"flex",gap:"6px",flexWrap:"wrap"}}>
@@ -611,7 +611,7 @@ function AdminDashboard({ onLogout }) {
         ))}
       </Modal>
       <Modal show={showInv} onClose={()=>setShowInv(false)} title="Invite Team Member"
-        footer={<><GhostBtn onClick={()=>setShowInv(false)} style={{flex:1,padding:"12px"}}>Cancel</GhostBtn><TealBtn onClick={()=>{if(inv.name&&inv.email){setTeam(prev=>[...prev,{id:prev.length+1,name:inv.name,role:inv.role,email:inv.email,status:"invited",joined:"—"}]);setInv({name:"",email:"",role:"Support Agent"});setShowInv(false);showToast(`✓ Invite sent to ${inv.name}!`);}}} style={{flex:1,padding:"12px"}}>Send Invite</TealBtn></>}>
+        footer={<><GhostBtn onClick={()=>setShowInv(false)} style={{flex:1,padding:"12px"}}>Cancel</GhostBtn><TealBtn onClick={()=>{if(inv.name&&inv.email){setTeam(prev=>[...prev,{id:prev.length+1,name:inv.name,role:inv.role,email:inv.email,status:"invited",joined:"--"}]);setInv({name:"",email:"",role:"Support Agent"});setShowInv(false);showToast(`✓ Invite sent to ${inv.name}!`);}}} style={{flex:1,padding:"12px"}}>Send Invite</TealBtn></>}>
         <div style={{display:"flex",flexDirection:"column",gap:"14px"}}>
           <Inp label="Full Name" value={inv.name} onChange={v=>setInv({...inv,name:v})} placeholder="e.g. Sade Williams" required/>
           <Inp label="Email Address" value={inv.email} onChange={v=>setInv({...inv,email:v})} type="email" placeholder="sade@carehub.ng" required/>
@@ -644,7 +644,7 @@ function AddProductModal({ existing, onClose, products, setProducts, showToast, 
         <div style={{padding:"14px",borderRadius:"12px",background:"#f0fdfa",border:"1px solid #ccfbf1"}}>
           <Toggle label="List on CareFind" desc="When enabled, this product appears publicly on CareFind so patients can search and find it at your location" value={f.listOnCareFind} onChange={v=>setF({...f,listOnCareFind:v})}/>
           {f.listOnCareFind&&<div style={{marginTop:"10px",padding:"10px",borderRadius:"8px",background:"white",fontSize:"12px",color:"#555",lineHeight:"1.6"}}>
-            ✅ Patients searching for <strong>"{f.name||"this product"}"</strong>{f.genericName?` or "${f.genericName}"`:""} will see <strong>{brandName||"your business"}</strong> in their results — with your WhatsApp contact and location.
+            ✅ Patients searching for <strong>"{f.name||"this product"}"</strong>{f.genericName?` or "${f.genericName}"`:""} will see <strong>{brandName||"your business"}</strong> in their results -- with your WhatsApp contact and location.
           </div>}
         </div>
       </div>
@@ -721,7 +721,7 @@ function InventoryPage({ products, setProducts, brand }) {
               return(
                 <tr key={p.id} style={{borderBottom:"1px solid #f9f9f9",background:out?"#fff5f5":low?"#fffbeb":"white"}}>
                   <td style={{padding:"12px 16px"}}><div style={{display:"flex",alignItems:"center",gap:"8px"}}><span style={{fontSize:"20px"}}>{p.emoji}</span><span style={{fontWeight:"700",fontSize:"13px"}}>{p.name}</span></div></td>
-                  <td style={{padding:"12px 16px",fontSize:"12px",color:"#888"}}>{p.genericName||"—"}</td>
+                  <td style={{padding:"12px 16px",fontSize:"12px",color:"#888"}}>{p.genericName||"--"}</td>
                   <td style={{padding:"12px 16px"}}><Pill label={p.cat} type="teal"/></td>
                   <td style={{padding:"12px 16px",fontSize:"13px",fontWeight:"700"}}>{fmt(p.price)}</td>
                   <td style={{padding:"12px 16px",fontSize:"14px",fontWeight:"900",color:out?"#ef4444":low?"#f59e0b":"#111"}}>{p.cat==="Services"?"∞":p.stock}</td>
@@ -766,7 +766,7 @@ function PublicProfilePage({ brand, products }) {
       {/* Profile preview */}
       <Card style={{marginBottom:"20px",overflow:"hidden"}}>
         <div style={{padding:"20px 24px",borderBottom:"1px solid #f0f0f0",display:"flex",alignItems:"center",justifyContent:"space-between",flexWrap:"wrap",gap:"12px"}}>
-          <div style={{fontSize:"14px",fontWeight:"700",color:"#555"}}>🔍 CareFind Preview — How patients see your profile</div>
+          <div style={{fontSize:"14px",fontWeight:"700",color:"#555"}}>🔍 CareFind Preview -- How patients see your profile</div>
           <Pill label={brand.visibleOnCareFind?"Live on CareFind":"Hidden"} type={brand.visibleOnCareFind?"green":"gray"}/>
         </div>
         <div style={{padding:"24px"}}>
@@ -817,7 +817,7 @@ function PublicProfilePage({ brand, products }) {
         <div style={{fontSize:"15px",fontWeight:"800",marginBottom:"16px"}}>CareFind Settings</div>
         <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"16px"}}>
           <Inp label="WhatsApp Number" value={brand.whatsapp||""} onChange={()=>{}} placeholder="e.g. 2348012345678"/>
-          <Inp label="Business Hours" value={brand.hours||""} onChange={()=>{}} placeholder="e.g. Mon–Sat 8am–8pm"/>
+          <Inp label="Business Hours" value={brand.hours||""} onChange={()=>{}} placeholder="e.g. Mon-Sat 8am-8pm"/>
           <Inp label="Google Maps Link" value={brand.mapsLink||""} onChange={()=>{}} placeholder="Paste Google Maps URL"/>
           <Inp label="GPS Latitude" value={String(brand.lat||"")} onChange={()=>{}} placeholder="e.g. 6.4474"/>
         </div>
@@ -983,7 +983,7 @@ function PharmacyConsultation({ onClose, products }) {
 function ConsultationPage({ businessType, products }) {
   const [view,setView]=useState("list");const [selC,setSelC]=useState(null);
   const past=[{id:1,client:"Ngozi Adeyemi",date:"Jun 10",staff:"Dr. Sade",type:"New Complaint",status:"completed"},{id:2,client:"Fatima Bello",date:"Jun 5",staff:"Dr. Amara",type:"Follow-up",status:"completed"},{id:3,client:"Chisom Obi",date:"May 28",staff:"Dr. Sade",type:"Repeat Prescription",status:"completed"}];
-  if(view==="new")return(<div><div style={{display:"flex",alignItems:"center",gap:"12px",marginBottom:"20px"}}><button onClick={()=>setView("list")} style={{width:"36px",height:"36px",borderRadius:"10px",background:"white",border:"1px solid #e5e7eb",cursor:"pointer",fontSize:"18px",display:"flex",alignItems:"center",justifyContent:"center"}}>←</button><div><div style={{fontWeight:"900",fontSize:"18px",color:"#0f172a"}}>{businessType==="pharmacy"?"Pharmacy Consultation":"Skincare Consultation"}</div><div style={{fontSize:"12px",color:"#aaa"}}>New record</div></div></div>{businessType==="pharmacy"?<PharmacyConsultation onClose={()=>setView("list")} products={products}/>:<div style={{textAlign:"center",padding:"60px",color:"#aaa"}}><div style={{fontSize:"40px",marginBottom:"12px"}}>🧴</div><div>Skincare consultation form — coming in next update</div><GhostBtn onClick={()=>setView("list")} style={{marginTop:"16px"}}>Back to List</GhostBtn></div>}</div>);
+  if(view==="new")return(<div><div style={{display:"flex",alignItems:"center",gap:"12px",marginBottom:"20px"}}><button onClick={()=>setView("list")} style={{width:"36px",height:"36px",borderRadius:"10px",background:"white",border:"1px solid #e5e7eb",cursor:"pointer",fontSize:"18px",display:"flex",alignItems:"center",justifyContent:"center"}}>←</button><div><div style={{fontWeight:"900",fontSize:"18px",color:"#0f172a"}}>{businessType==="pharmacy"?"Pharmacy Consultation":"Skincare Consultation"}</div><div style={{fontSize:"12px",color:"#aaa"}}>New record</div></div></div>{businessType==="pharmacy"?<PharmacyConsultation onClose={()=>setView("list")} products={products}/>:<div style={{textAlign:"center",padding:"60px",color:"#aaa"}}><div style={{fontSize:"40px",marginBottom:"12px"}}>🧴</div><div>Skincare consultation form -- coming in next update</div><GhostBtn onClick={()=>setView("list")} style={{marginTop:"16px"}}>Back to List</GhostBtn></div>}</div>);
   return(<div><SectionHead title="Consultations" sub={businessType==="pharmacy"?"Patient records":"Client records"} btn="+ New Consultation" onBtn={()=>setView("new")}/><div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:"14px",marginBottom:"20px"}}><StatCard icon="📋" label="Total" value={past.length}/><StatCard icon="📅" label="This Month" value="2"/><StatCard icon="⏳" label="Pending Follow-up" value="1"/></div><Card><div style={{overflowX:"auto"}}><table style={{width:"100%",borderCollapse:"collapse"}}><thead><tr style={{borderBottom:"1px solid #f5f5f5",background:"#fafafa"}}>{["Client","Date","Staff","Type","Status","Action"].map(h=><th key={h} style={{padding:"12px 16px",textAlign:"left",fontSize:"11px",fontWeight:"700",color:"#aaa",textTransform:"uppercase"}}>{h}</th>)}</tr></thead><tbody>{past.map(c=>(<tr key={c.id} style={{borderBottom:"1px solid #f9f9f9"}}><td style={{padding:"12px 16px"}}><div style={{display:"flex",alignItems:"center",gap:"8px"}}><Avatar name={c.client} size={30}/><span style={{fontWeight:"700",fontSize:"13px"}}>{c.client}</span></div></td><td style={{padding:"12px 16px",fontSize:"12px",color:"#aaa"}}>{c.date}</td><td style={{padding:"12px 16px",fontSize:"13px",color:"#666"}}>{c.staff}</td><td style={{padding:"12px 16px"}}><Pill label={c.type} type="teal"/></td><td style={{padding:"12px 16px"}}><Pill label={c.status} type="green"/></td><td style={{padding:"12px 16px"}}><div style={{display:"flex",gap:"6px"}}><GhostBtn onClick={()=>setSelC(c)}>View</GhostBtn><GhostBtn>PDF</GhostBtn></div></td></tr>))}</tbody></table></div></Card><Modal show={!!selC} onClose={()=>setSelC(null)} title="Consultation Summary">{selC&&[["Client",selC.client],["Date",selC.date],["Staff",selC.staff],["Type",selC.type],["Status",selC.status]].map(([l,v])=><div key={l} style={{display:"flex",justifyContent:"space-between",padding:"8px 0",borderBottom:"1px solid #f9f9f9",fontSize:"13px"}}><span style={{color:"#888",fontWeight:"600"}}>{l}</span><span style={{color:"#0f172a"}}>{v}</span></div>)}</Modal></div>);
 }
 
@@ -1089,11 +1089,11 @@ function BusinessDashboard({ brand, onLogout }) {
 export default function CareHub() {
   const [screen,setScreen]=useState("landing");const [brands,setBrands]=useState(INIT_BRANDS);const [currentBrand,setCurrentBrand]=useState(null);
   const handleSubmit=data=>{
-    setBrands(prev=>[...prev,{id:prev.length+1,name:data.businessName,owner:`${data.firstName} ${data.lastName}`,email:data.ownerEmail,phone:data.ownerPhone||"—",whatsapp:data.whatsapp||"",address:data.address||"—",state:data.state||"",city:data.city||"",lat:parseFloat(data.lat)||0,lng:parseFloat(data.lng)||0,hours:data.businessHours||"",mapsLink:data.mapsLink||"",status:"pending",date:new Date().toLocaleDateString("en-NG"),password:data.password,type:data.businessType||"skincare",visibleOnCareFind:data.visibleOnCareFind!==false}]);
+    setBrands(prev=>[...prev,{id:prev.length+1,name:data.businessName,owner:`${data.firstName} ${data.lastName}`,email:data.ownerEmail,phone:data.ownerPhone||"--",whatsapp:data.whatsapp||"",address:data.address||"--",state:data.state||"",city:data.city||"",lat:parseFloat(data.lat)||0,lng:parseFloat(data.lng)||0,hours:data.businessHours||"",mapsLink:data.mapsLink||"",status:"pending",date:new Date().toLocaleDateString("en-NG"),password:data.password,type:data.businessType||"skincare",visibleOnCareFind:data.visibleOnCareFind!==false}]);
   };
   if(screen==="landing") return<LandingPage onLogin={()=>setScreen("login")} onRegister={()=>setScreen("register")}/>;
   if(screen==="register") return<Registration onBack={()=>setScreen("login")} onSubmitted={handleSubmit}/>;
   if(screen==="admin") return<AdminDashboard onLogout={()=>setScreen("landing")}/>;
   if(screen==="business"&&currentBrand) return<BusinessDashboard brand={currentBrand} onLogout={()=>{setCurrentBrand(null);setScreen("landing");}}/>;
   return<LoginScreen brands={brands} onAdminLogin={()=>setScreen("admin")} onBrandLogin={b=>{setCurrentBrand(b);setScreen("business");}} onRegister={()=>setScreen("register")} onHome={()=>setScreen("landing")}/>;
-}k
+}
