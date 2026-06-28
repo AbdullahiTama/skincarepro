@@ -3,9 +3,15 @@ import react from '@vitejs/plugin-react'
 
 export default defineConfig({
   plugins: [react()],
+  optimizeDeps: {
+    include: ['react', 'react-dom']
+  },
   build: {
+    chunkSizeWarningLimit: 5000,
     rollupOptions: {
-      external: []
+      output: {
+        manualChunks: undefined
+      }
     }
   }
 })
