@@ -405,7 +405,7 @@ function Registration({ onBack, onSubmitted }) {
           <button onClick={()=>setStep(s=>s-1)} style={{width:"36px",height:"36px",borderRadius:"10px",background:"white",border:"1px solid #e5e7eb",cursor:"pointer",fontSize:"18px",display:"flex",alignItems:"center",justifyContent:"center"}}>←</button>
           <div><div style={{fontWeight:"900",fontSize:"18px",color:"#0f172a"}}>Register {businessIcon(data.businessType)} {businessName(data.businessType)}</div><div style={{fontSize:"12px",color:"#aaa"}}>Step {step} of {STEPS.length} -- {STEPS[step-1]}</div></div>
         </div>
-        <div style={{height:"6px",background:"#e5e7eb",borderRadius:"3px",overflow:"hidden",marginBottom:"24px"}}><div style={{height:"100%",width:`${(step/STEPS.length)*100}%`,background:TEAL,borderRadius:"3px",transition:"width 0.4s"}}/></div>
+        <div style={{height:"6px",background:"#e5e7eb",borderRadius:"3px",overflow:"hidden",marginBottom:"24px"}}><div style={{height:"100%",width:((step/STEPS.length)*100)+"%",background:TEAL,borderRadius:"3px",transition:"width 0.4s"}}/></div>
         <Card style={{padding:"24px",marginBottom:"16px"}}>
           {step===1&&<div style={{display:"flex",flexDirection:"column",gap:"14px"}}>
             <div style={{fontSize:"17px",fontWeight:"800",color:"#0f172a"}}>Business Information</div>
@@ -462,7 +462,7 @@ function Registration({ onBack, onSubmitted }) {
           {step===5&&<div>
             <div style={{fontSize:"17px",fontWeight:"800",color:"#0f172a",marginBottom:"16px"}}>Review & Submit</div>
             <div style={{borderRadius:"12px",overflow:"hidden",border:"1px solid #f0f0f0"}}>
-              {[["Business Type",`${businessIcon(data.businessType)} ${businessName(data.businessType)}`],["Business Name",data.businessName],["State",data.state],["Business Email",data.businessEmail],["WhatsApp",data.whatsapp],["Business Hours",data.businessHours],["Owner Name",`${data.firstName||""} ${data.lastName||""}`.trim()],["Login Email",data.ownerEmail],["CareFind Listing",data.visibleOnCareFind===false?"No":"Yes"]].filter(([,v])=>v).map(([l,v],i)=>(
+              {[["Business Type",businessIcon(data.businessType)+" "+businessName(data.businessType)],["Business Name",data.businessName],["State",data.state],["Business Email",data.businessEmail],["WhatsApp",data.whatsapp],["Business Hours",data.businessHours],["Owner Name",((data.firstName||"")+" "+(data.lastName||"")).trim()],["Login Email",data.ownerEmail],["CareFind Listing",data.visibleOnCareFind===false?"No":"Yes"]].filter(([,v])=>v).map(([l,v],i)=>(
                 <div key={l} style={{display:"flex",justifyContent:"space-between",padding:"10px 14px",background:i%2===0?"#fafafa":"white",fontSize:"13px"}}>
                   <span style={{color:"#888",fontWeight:"600"}}>{l}</span><span style={{color:"#0f172a"}}>{v}</span>
                 </div>
@@ -527,7 +527,7 @@ function AdminDashboard({ onLogout }) {
           </div>
           {pending.length>0&&<div style={{marginBottom:"20px",padding:"14px 18px",borderRadius:"14px",background:"#fffbeb",border:"1px solid #fcd34d",display:"flex",alignItems:"flex-start",gap:"12px"}}>
             <span style={{fontSize:"20px"}}>🔔</span>
-            <div><div style={{fontWeight:"700",color:"#92400e",fontSize:"14px"}}>{pending.length} business{pending.length>1?"es":""} waiting for your approval!</div><div style={{fontSize:"12px",color:"#b45309",marginTop:"4px"}}>{pending.map(b=>`${businessIcon(b.type)} ${b.name}`).join(" · ")}</div></div>
+            <div><div style={{fontWeight:"700",color:"#92400e",fontSize:"14px"}}>{pending.length} business{pending.length>1?"es":""} waiting for your approval!</div><div style={{fontSize:"12px",color:"#b45309",marginTop:"4px"}}>{pending.map(b=>businessIcon(b.type)+" "+b.name).join(" · ")}</div></div>
           </div>}
           <Card>
             <div style={{overflowX:"auto"}}>
@@ -543,9 +543,9 @@ function AdminDashboard({ onLogout }) {
                     <td style={{padding:"12px 16px"}}>{sPill(b.status)}</td>
                     <td style={{padding:"12px 16px"}}><div style={{display:"flex",gap:"6px",flexWrap:"wrap"}}>
                       <GhostBtn onClick={()=>setSel(b)}>View</GhostBtn>
-                      {b.status==="pending"&&<button onClick={()=>updStatus(b.id,"active",`✓ ${b.name} approved!`)} style={{padding:"6px 12px",borderRadius:"8px",border:"none",background:"#059669",color:"white",fontWeight:"700",fontSize:"12px",cursor:"pointer"}}>✓ Approve</button>}
-                      {b.status==="active"&&<button onClick={()=>updStatus(b.id,"suspended",`${b.name} suspended.`)} style={{padding:"6px 12px",borderRadius:"8px",border:"none",background:"#fef2f2",color:"#dc2626",fontWeight:"700",fontSize:"12px",cursor:"pointer"}}>Suspend</button>}
-                      {b.status==="suspended"&&<button onClick={()=>updStatus(b.id,"active",`${b.name} reactivated!`)} style={{padding:"6px 12px",borderRadius:"8px",border:"none",background:"#059669",color:"white",fontWeight:"700",fontSize:"12px",cursor:"pointer"}}>Reactivate</button>}
+                      {b.status==="pending"&&<button onClick={()=>updStatus(b.id,"active","Approved!")} style={{padding:"6px 12px",borderRadius:"8px",border:"none",background:"#059669",color:"white",fontWeight:"700",fontSize:"12px",cursor:"pointer"}}>✓ Approve</button>}
+                      {b.status==="active"&&<button onClick={()=>updStatus(b.id,"suspended","Suspended.")} style={{padding:"6px 12px",borderRadius:"8px",border:"none",background:"#fef2f2",color:"#dc2626",fontWeight:"700",fontSize:"12px",cursor:"pointer"}}>Suspend</button>}
+                      {b.status==="suspended"&&<button onClick={()=>updStatus(b.id,"active","Reactivated!")} style={{padding:"6px 12px",borderRadius:"8px",border:"none",background:"#059669",color:"white",fontWeight:"700",fontSize:"12px",cursor:"pointer"}}>Reactivate</button>}
                     </div></td>
                   </tr>
                 ))}</tbody>
@@ -578,7 +578,7 @@ function AdminDashboard({ onLogout }) {
               {BUSINESS_TYPES.map(b=>(
                 <div key={b.id} style={{display:"flex",alignItems:"center",gap:"10px",marginBottom:"10px"}}>
                   <span style={{fontSize:"16px",width:"24px"}}>{b.icon}</span>
-                  <div style={{flex:1,height:"8px",background:"#f0f0f0",borderRadius:"4px",overflow:"hidden"}}><div style={{height:"100%",width:`${(brands.filter(x=>x.type===b.id).length/Math.max(brands.length,1))*100}%`,background:TEAL,borderRadius:"4px"}}/></div>
+                  <div style={{flex:1,height:"8px",background:"#f0f0f0",borderRadius:"4px",overflow:"hidden"}}><div style={{height:"100%",width:((brands.filter(x=>x.type===b.id).length/Math.max(brands.length,1))*100)+"%",background:TEAL,borderRadius:"4px"}}/></div>
                   <span style={{fontSize:"12px",color:"#555",width:"20px",textAlign:"right",fontWeight:"700"}}>{brands.filter(x=>x.type===b.id).length}</span>
                 </div>
               ))}
@@ -604,14 +604,27 @@ function AdminDashboard({ onLogout }) {
           </Card>
         </>}
       </div>
-      <Modal show={!!sel} onClose={()=>setSel(null)} title="Business Details"
-        footer={<>{sel&&sel.status==="pending"&&<><button onClick={()=>updStatus(sel.id,"active",`✓ ${sel&&sel.name} approved!`)} style={{flex:1,padding:"11px",borderRadius:"12px",border:"none",background:"#059669",color:"white",fontWeight:"700",cursor:"pointer"}}>✓ Approve</button><button onClick={()=>updStatus(sel.id,"rejected","Rejected.")} style={{flex:1,padding:"11px",borderRadius:"12px",border:"none",background:"#fef2f2",color:"#dc2626",fontWeight:"700",cursor:"pointer"}}>✕ Reject</button></>{sel&&sel.status==="active"&&<button onClick={()=>updStatus(sel.id,"suspended","Suspended.")} style={{flex:1,padding:"11px",borderRadius:"12px",border:"none",background:"#fffbeb",color:"#d97706",fontWeight:"700",cursor:"pointer"}}>⏸ Suspend</button>}{sel&&sel.status==="suspended"&&<button onClick={()=>updStatus(sel.id,"active","Reactivated!")} style={{flex:1,padding:"11px",borderRadius:"12px",border:"none",background:"#059669",color:"white",fontWeight:"700",cursor:"pointer"}}>▶ Reactivate</button>}</>}>
-        {sel&&[["Business",sel.name],["Type",`${businessIcon(sel.type)} ${businessName(sel.type)}`],["Owner",sel.owner],["Email",sel.email],["Phone",sel.phone],["WhatsApp",sel.whatsapp],["Address",sel.address],["State",sel.state],["Business Hours",sel.hours],["CareFind",sel.visibleOnCareFind?"Listed publicly":"Hidden"],["Registered",sel.date]].map(([l,v])=>(
-          <div key={l} style={{display:"flex",justifyContent:"space-between",padding:"8px 0",borderBottom:"1px solid #f9f9f9",fontSize:"13px"}}><span style={{color:"#888",fontWeight:"600"}}>{l}</span><span style={{color:"#0f172a",textAlign:"right",maxWidth:"260px"}}>{v}</span></div>
-        ))}
-      </Modal>
+      {sel && (
+        <Modal show={true} onClose={()=>setSel(null)} title="Business Details"
+          footer={
+            <div style={{display:"flex",gap:"10px",width:"100%"}}>
+              {sel.status==="pending" && <>
+                <button onClick={()=>updStatus(sel.id,"active","Approved!")} style={{flex:1,padding:"11px",borderRadius:"12px",border:"none",background:"#059669",color:"white",fontWeight:"700",cursor:"pointer"}}>Approve</button>
+                <button onClick={()=>updStatus(sel.id,"rejected","Rejected.")} style={{flex:1,padding:"11px",borderRadius:"12px",border:"none",background:"#fef2f2",color:"#dc2626",fontWeight:"700",cursor:"pointer"}}>Reject</button>
+              </>}
+              {sel.status==="active" && <button onClick={()=>updStatus(sel.id,"suspended","Suspended.")} style={{flex:1,padding:"11px",borderRadius:"12px",border:"none",background:"#fffbeb",color:"#d97706",fontWeight:"700",cursor:"pointer"}}>Suspend</button>}
+              {sel.status==="suspended" && <button onClick={()=>updStatus(sel.id,"active","Reactivated!")} style={{flex:1,padding:"11px",borderRadius:"12px",border:"none",background:"#059669",color:"white",fontWeight:"700",cursor:"pointer"}}>Reactivate</button>}
+            </div>
+          }>
+          <div>
+            {[["Business",sel.name],["Type",businessIcon(sel.type)+" "+businessName(sel.type)],["Owner",sel.owner],["Email",sel.email],["Phone",sel.phone],["WhatsApp",sel.whatsapp||"Not set"],["Address",sel.address],["State",sel.state],["Hours",sel.hours||"Not set"],["CareFind",sel.visibleOnCareFind?"Listed":"Hidden"],["Registered",sel.date]].map(function(item){
+              return <div key={item[0]} style={{display:"flex",justifyContent:"space-between",padding:"8px 0",borderBottom:"1px solid #f9f9f9",fontSize:"13px"}}><span style={{color:"#888",fontWeight:"600"}}>{item[0]}</span><span style={{color:"#0f172a",textAlign:"right",maxWidth:"240px"}}>{item[1]}</span></div>;
+            })}
+          </div>
+        </Modal>
+      )}
       <Modal show={showInv} onClose={()=>setShowInv(false)} title="Invite Team Member"
-        footer={<><GhostBtn onClick={()=>setShowInv(false)} style={{flex:1,padding:"12px"}}>Cancel</GhostBtn><TealBtn onClick={()=>{if(inv.name&&inv.email){setTeam(prev=>[...prev,{id:prev.length+1,name:inv.name,role:inv.role,email:inv.email,status:"invited",joined:"--"}]);setInv({name:"",email:"",role:"Support Agent"});setShowInv(false);showToast(`✓ Invite sent to ${inv.name}!`);}}} style={{flex:1,padding:"12px"}}>Send Invite</TealBtn></>}>
+        footer={<><GhostBtn onClick={()=>setShowInv(false)} style={{flex:1,padding:"12px"}}>Cancel</GhostBtn><TealBtn onClick={()=>{if(inv.name&&inv.email){setTeam(prev=>[...prev,{id:prev.length+1,name:inv.name,role:inv.role,email:inv.email,status:"invited",joined:"--"}]);setInv({name:"",email:"",role:"Support Agent"});setShowInv(false);showToast("Invite sent!");}}} style={{flex:1,padding:"12px"}}>Send Invite</TealBtn></>}>
         <div style={{display:"flex",flexDirection:"column",gap:"14px"}}>
           <Inp label="Full Name" value={inv.name} onChange={v=>setInv({...inv,name:v})} placeholder="e.g. Sade Williams" required/>
           <Inp label="Email Address" value={inv.email} onChange={v=>setInv({...inv,email:v})} type="email" placeholder="sade@carehub.ng" required/>
@@ -631,7 +644,7 @@ function AddProductModal({ existing, onClose, products, setProducts, showToast, 
   const canSave=f.name&&f.price&&(f.cat==="Services"||f.stock!=="");
   return(
     <Modal show title={existing?"Edit Product":"Add New Product"} onClose={onClose}
-      footer={<><GhostBtn onClick={onClose} style={{flex:1,padding:"12px"}}>Cancel</GhostBtn><TealBtn onClick={()=>{if(!canSave)return;const np={...f,id:existing?f.id:Math.max(...products.map(p=>p.id),0)+1,price:Number(f.price),stock:f.cat==="Services"?999:Number(f.stock)||0};if(existing){setProducts(prev=>prev.map(p=>p.id===np.id?np:p));}else{setProducts(prev=>[...prev,np]);}showToast(`✓ ${f.name} ${existing?"updated":"added"}!`);onClose();}} style={{flex:1,padding:"12px"}}>✓ {existing?"Save Changes":"Add Product"}</TealBtn></>}>
+      footer={<><GhostBtn onClick={onClose} style={{flex:1,padding:"12px"}}>Cancel</GhostBtn><TealBtn onClick={()=>{if(!canSave)return;const np={...f,id:existing?f.id:Math.max(...products.map(p=>p.id),0)+1,price:Number(f.price),stock:f.cat==="Services"?999:Number(f.stock)||0};if(existing){setProducts(prev=>prev.map(p=>p.id===np.id?np:p));}else{setProducts(prev=>[...prev,np]);}showToast("Saved!");onClose();}} style={{flex:1,padding:"12px"}}>✓ {existing?"Save Changes":"Add Product"}</TealBtn></>}>
       <div style={{display:"flex",flexDirection:"column",gap:"14px"}}>
         <div><div style={{fontSize:"11px",fontWeight:"700",color:"#666",marginBottom:"8px"}}>Icon</div><div style={{display:"flex",flexWrap:"wrap",gap:"6px"}}>{emojis.map(e=><button key={e} onClick={()=>setF({...f,emoji:e})} style={{width:"36px",height:"36px",borderRadius:"10px",border:f.emoji===e?"2px solid #0f766e":"1px solid #e5e7eb",background:f.emoji===e?"#f0fdfa":"#f9fafb",cursor:"pointer",fontSize:"18px"}}>{e}</button>)}</div></div>
         <Inp label="Product / Service Name *" value={f.name} onChange={v=>setF({...f,name:v})} placeholder="e.g. Amoxicillin 500mg"/>
@@ -644,7 +657,7 @@ function AddProductModal({ existing, onClose, products, setProducts, showToast, 
         <div style={{padding:"14px",borderRadius:"12px",background:"#f0fdfa",border:"1px solid #ccfbf1"}}>
           <Toggle label="List on CareFind" desc="When enabled, this product appears publicly on CareFind so patients can search and find it at your location" value={f.listOnCareFind} onChange={v=>setF({...f,listOnCareFind:v})}/>
           {f.listOnCareFind&&<div style={{marginTop:"10px",padding:"10px",borderRadius:"8px",background:"white",fontSize:"12px",color:"#555",lineHeight:"1.6"}}>
-            ✅ Patients searching for <strong>"{f.name||"this product"}"</strong>{f.genericName?` or "${f.genericName}"`:""} will see <strong>{brandName||"your business"}</strong> in their results -- with your WhatsApp contact and location.
+            ✅ Patients searching for <strong>"{f.name||"this product"}"</strong>{f.genericName?" or "+f.genericName+"":" "} will see <strong>{brandName||"your business"}</strong> in their results -- with your WhatsApp contact and location.
           </div>}
         </div>
       </div>
@@ -656,7 +669,7 @@ function RestockModal({ product, onClose, setProducts, showToast }) {
   const [qty,setQty]=useState("");const [note,setNote]=useState("");
   return(
     <Modal show title="Restock Product" onClose={onClose}
-      footer={<><GhostBtn onClick={onClose} style={{flex:1,padding:"12px"}}>Cancel</GhostBtn><TealBtn onClick={()=>{if(!qty||Number(qty)<=0)return;setProducts(prev=>prev.map(p=>p.id===product.id?{...p,stock:p.stock+Number(qty)}:p));showToast(`✓ ${qty} units added to ${product.name}!`);onClose();}} style={{flex:1,padding:"12px"}}>+ Add Stock</TealBtn></>}>
+      footer={<><GhostBtn onClick={onClose} style={{flex:1,padding:"12px"}}>Cancel</GhostBtn><TealBtn onClick={()=>{if(!qty||Number(qty)<=0)return;setProducts(prev=>prev.map(p=>p.id===product.id?{...p,stock:p.stock+Number(qty)}:p));showToast("Stock added!");onClose();}} style={{flex:1,padding:"12px"}}>+ Add Stock</TealBtn></>}>
       <div style={{display:"flex",flexDirection:"column",gap:"14px"}}>
         <div style={{padding:"12px",borderRadius:"10px",background:"#f9fafb",display:"flex",justifyContent:"space-between",fontSize:"13px"}}><span style={{color:"#888"}}>Current stock</span><span style={{fontWeight:"700"}}>{product.stock} units</span></div>
         <Inp label="Units to Add *" value={qty} onChange={setQty} type="number" placeholder="e.g. 100"/>
@@ -682,7 +695,7 @@ function InventoryPage({ products, setProducts, brand }) {
       <SectionHead title="Inventory" sub="Manage products, stock and CareFind listings" btn="+ Add Product" onBtn={()=>setShowAdd(true)}/>
       <div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:"14px",marginBottom:"20px"}}>
         <StatCard icon="📦" label="Total Products" value={products.length}/>
-        <StatCard icon="⚠️" label="Low Stock" value={lowStock.length} alert={lowStock.length>0} sub={`${outOfStock.length} out of stock`}/>
+        <StatCard icon="⚠️" label="Low Stock" value={lowStock.length} alert={lowStock.length>0} sub={outOfStock.length+" out of stock"}/>
         <StatCard icon="💰" label="Stock Value" value={fmt(products.filter(p=>p.cat!=="Services").reduce((s,p)=>s+p.price*p.stock,0))}/>
         <StatCard icon="🔍" label="On CareFind" value={listedOnCareFind} sub="Products visible to public"/>
       </div>
@@ -754,12 +767,12 @@ function InventoryPage({ products, setProducts, brand }) {
 // PUBLIC PROFILE PAGE
 function PublicProfilePage({ brand, products }) {
   const listedProds=products.filter(p=>p.listOnCareFind);
-  const waLink=`https://wa.me/${(brand.whatsapp||"").replace(/[^0-9]/g,"")||""}`;
+  const waLink="https://wa.me/"+((brand.whatsapp||"").replace(/[^0-9]/g,"")||"");
   return(
     <div>
       <SectionHead title="Public Profile" sub="This is how your business appears on CareFind"/>
       <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"20px",marginBottom:"20px"}}>
-        <StatCard icon="🔍" label="Products on CareFind" value={listedProds.filter(p=>p.stock>0).length} sub={`${listedProds.filter(p=>p.stock<=0).length} out of stock`}/>
+        <StatCard icon="🔍" label="Products on CareFind" value={listedProds.filter(p=>p.stock>0).length} sub={String(listedProds.filter(p=>p.stock<=0).length)+" out of stock"}/>
         <StatCard icon="👁" label="Profile Status" value={brand.visibleOnCareFind?"Live":"Hidden"} sub={brand.visibleOnCareFind?"Visible to patients searching nearby":"Not listed on CareFind"}/>
       </div>
 
@@ -774,7 +787,7 @@ function PublicProfilePage({ brand, products }) {
             <div style={{width:"56px",height:"56px",borderRadius:"16px",background:TEAL,display:"flex",alignItems:"center",justifyContent:"center",fontSize:"28px",flexShrink:0}}>{businessIcon(brand.type)}</div>
             <div style={{flex:1}}>
               <div style={{fontSize:"20px",fontWeight:"900",color:"#0f172a"}}>{brand.name}</div>
-              <div style={{fontSize:"13px",color:"#888",marginTop:"4px"}}>📍 {brand.address}{brand.city?` · ${brand.city}`:""}</div>
+              <div style={{fontSize:"13px",color:"#888",marginTop:"4px"}}>📍 {brand.address}{brand.city?" · "+brand.city:""}</div>
               <div style={{fontSize:"13px",color:"#888",marginTop:"2px"}}>⏰ {brand.hours||"Hours not set"}</div>
               <div style={{display:"flex",gap:"8px",marginTop:"10px",flexWrap:"wrap"}}>
                 <a href={waLink} target="_blank" rel="noreferrer"
@@ -862,7 +875,7 @@ function InlinePOS({ products, setProducts }) {
               <div style={{fontSize:"12px",fontWeight:"700",color:"#111",marginBottom:"2px",lineHeight:"1.3"}}>{p.name}</div>
               {p.genericName&&<div style={{fontSize:"10px",color:"#bbb",marginBottom:"4px"}}>{p.genericName}</div>}
               <div style={{fontSize:"14px",fontWeight:"900",color:TEALC}}>{fmt(p.price)}</div>
-              {p.cat!=="Services"&&<div style={{fontSize:"10px",color:p.stock<=5?"#ef4444":"#bbb",marginTop:"3px",fontWeight:"600"}}>{out?"Out of stock":`${p.stock} left`}</div>}
+              {p.cat!=="Services"&&<div style={{fontSize:"10px",color:p.stock<=5?"#ef4444":"#bbb",marginTop:"3px",fontWeight:"600"}}>{out?"Out of stock":p.stock+" left"}</div>}
             </button>
           );})}
         </div>
@@ -880,8 +893,8 @@ function InlinePOS({ products, setProducts }) {
           <div style={{display:"flex",gap:"6px"}}><div style={{display:"flex",borderRadius:"8px",border:"1px solid #e5e7eb",overflow:"hidden"}}><button onClick={()=>setDiscPct(false)} style={{padding:"6px 10px",border:"none",cursor:"pointer",fontWeight:"800",fontSize:"12px",background:!discPct?"#0f766e":"white",color:!discPct?"white":"#888"}}>₦</button><button onClick={()=>setDiscPct(true)} style={{padding:"6px 10px",border:"none",cursor:"pointer",fontWeight:"800",fontSize:"12px",background:discPct?"#0f766e":"white",color:discPct?"white":"#888"}}>%</button></div><input value={disc} onChange={e=>setDisc(e.target.value)} placeholder="Discount" style={{flex:1,padding:"6px 10px",borderRadius:"8px",border:"1px solid #e5e7eb",fontSize:"13px",outline:"none"}}/></div>
           <div style={{background:"white",borderRadius:"10px",padding:"10px",border:"1px solid #f0f0f0"}}><div style={{display:"flex",justifyContent:"space-between",fontSize:"12px",color:"#888",marginBottom:"3px"}}><span>Subtotal</span><span>{fmt(sub)}</span></div>{discAmt>0&&<div style={{display:"flex",justifyContent:"space-between",fontSize:"12px",color:"#059669",marginBottom:"3px"}}><span>Discount</span><span>−{fmt(discAmt)}</span></div>}<div style={{display:"flex",justifyContent:"space-between",fontSize:"18px",fontWeight:"900",borderTop:"1px solid #f0f0f0",paddingTop:"6px",marginTop:"3px"}}><span>Total</span><span style={{color:TEALC}}>{fmt(total)}</span></div></div>
           <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"5px"}}>{[["Cash","💵"],["Transfer","🏦"],["POS","💳"],["Split","✂️"]].map(([m,i])=><button key={m} onClick={()=>setMethod(m)} style={{padding:"8px",borderRadius:"8px",border:"none",cursor:"pointer",fontWeight:"700",fontSize:"12px",background:method===m?"#0f766e":"#f0f0f0",color:method===m?"white":"#666"}}>{i} {m}</button>)}</div>
-          {method==="Cash"&&<div><input type="number" value={cash} onChange={e=>setCash(e.target.value)} placeholder="Cash given (₦)" style={{width:"100%",padding:"8px 12px",borderRadius:"8px",border:"1px solid #e5e7eb",fontSize:"13px",outline:"none",boxSizing:"border-box"}}/>{cash&&<div style={{fontSize:"12px",fontWeight:"700",marginTop:"5px",color:change>=0?"#059669":"#ef4444"}}>{change>=0?`✓ Change: ${fmt(change)}`:`⚠ Short: ${fmt(Math.abs(change))}`}</div>}</div>}
-          <button onClick={charge} disabled={!cart.length} style={{padding:"14px",borderRadius:"12px",border:"none",background:cart.length?TEAL:"#e5e7eb",color:cart.length?"white":"#bbb",fontWeight:"900",fontSize:"14px",cursor:cart.length?"pointer":"not-allowed"}}>{cart.length?`💳 Charge ${fmt(total)}`:"Select products above"}</button>
+          {method==="Cash"&&<div><input type="number" value={cash} onChange={e=>setCash(e.target.value)} placeholder="Cash given (₦)" style={{width:"100%",padding:"8px 12px",borderRadius:"8px",border:"1px solid #e5e7eb",fontSize:"13px",outline:"none",boxSizing:"border-box"}}/>{cash&&<div style={{fontSize:"12px",fontWeight:"700",marginTop:"5px",color:change>=0?"#059669":"#ef4444"}}>{change>=0?"Change: "+fmt(change):"Short: "+fmt(Math.abs(change))}</div>}</div>}
+          <button onClick={charge} disabled={!cart.length} style={{padding:"14px",borderRadius:"12px",border:"none",background:cart.length?TEAL:"#e5e7eb",color:cart.length?"white":"#bbb",fontWeight:"900",fontSize:"14px",cursor:cart.length?"pointer":"not-allowed"}}>{cart.length?"Charge "+fmt(total):"Select products above"}</button>
         </div>
       </div>
     </div>
@@ -1045,7 +1058,7 @@ function BusinessDashboard({ brand, onLogout }) {
       case "clients":return(<div><SectionHead title={bType==="pharmacy"?"Patients":"Clients"} sub="All records" btn="+ Add"/><Card><div style={{overflowX:"auto"}}><table style={{width:"100%",borderCollapse:"collapse"}}><thead><tr style={{borderBottom:"1px solid #f5f5f5",background:"#fafafa"}}>{["Name","Type","Visits","Last Visit","Total Spend"].map(h=><th key={h} style={{padding:"12px 16px",textAlign:"left",fontSize:"11px",fontWeight:"700",color:"#aaa",textTransform:"uppercase"}}>{h}</th>)}</tr></thead><tbody>{CLIENTS.map(c=><tr key={c.id} style={{borderBottom:"1px solid #f9f9f9"}}><td style={{padding:"12px 16px"}}><div style={{display:"flex",alignItems:"center",gap:"8px"}}><Avatar name={c.name} size={30} bg="linear-gradient(135deg,#8b5cf6,#a78bfa)"/><span style={{fontWeight:"700",fontSize:"13px"}}>{c.name}</span></div></td><td style={{padding:"12px 16px"}}><Pill label={c.type} type={c.type==="New"?"blue":"teal"}/></td><td style={{padding:"12px 16px",fontSize:"13px",fontWeight:"700"}}>{c.visits}</td><td style={{padding:"12px 16px",fontSize:"13px",color:"#888"}}>{c.last}</td><td style={{padding:"12px 16px",fontSize:"13px",fontWeight:"900"}}>{fmt(c.spend)}</td></tr>)}</tbody></table></div></Card></div>);
       case "expenses":return(<div><SectionHead title="Expenses" sub="Track all spending" btn="+ Log Expense"/><div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:"14px",marginBottom:"20px"}}><StatCard icon="💸" label="Total This Month" value={fmt(EXPENSES.reduce((s,e)=>s+e.amount,0))}/><StatCard icon="🏠" label="Biggest" value="Rent"/><StatCard icon="📊" label="vs Revenue" value="-61%"/></div><Card><div style={{overflowX:"auto"}}><table style={{width:"100%",borderCollapse:"collapse"}}><thead><tr style={{borderBottom:"1px solid #f5f5f5",background:"#fafafa"}}>{["Category","Description","Amount","Date"].map(h=><th key={h} style={{padding:"12px 16px",textAlign:"left",fontSize:"11px",fontWeight:"700",color:"#aaa",textTransform:"uppercase"}}>{h}</th>)}</tr></thead><tbody>{EXPENSES.map(e=><tr key={e.id} style={{borderBottom:"1px solid #f9f9f9"}}><td style={{padding:"12px 16px"}}><Pill label={e.cat} type="teal"/></td><td style={{padding:"12px 16px",fontSize:"13px",color:"#555"}}>{e.desc}</td><td style={{padding:"12px 16px",fontSize:"13px",fontWeight:"900"}}>{fmt(e.amount)}</td><td style={{padding:"12px 16px",fontSize:"12px",color:"#aaa"}}>{e.date}</td></tr>)}</tbody></table></div></Card></div>);
       case "debts":return(<div><SectionHead title="Debt Management" sub="Track money owed" btn="+ Record Debt"/><div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"14px",marginBottom:"20px"}}><Card style={{padding:"18px",borderLeft:"4px solid #059669"}}><div style={{fontSize:"12px",color:"#888",fontWeight:"600"}}>Clients Owe You</div><div style={{fontSize:"24px",fontWeight:"900",marginTop:"4px"}}>₦23,500</div></Card><Card style={{padding:"18px",borderLeft:"4px solid #ef4444"}}><div style={{fontSize:"12px",color:"#888",fontWeight:"600"}}>You Owe Suppliers</div><div style={{fontSize:"24px",fontWeight:"900",marginTop:"4px"}}>₦45,000</div></Card></div><Card><div style={{overflowX:"auto"}}><table style={{width:"100%",borderCollapse:"collapse"}}><thead><tr style={{borderBottom:"1px solid #f5f5f5",background:"#fafafa"}}>{["Direction","Party","Amount","Due","Status"].map(h=><th key={h} style={{padding:"12px 16px",textAlign:"left",fontSize:"11px",fontWeight:"700",color:"#aaa",textTransform:"uppercase"}}>{h}</th>)}</tr></thead><tbody>{DEBTS.map(d=><tr key={d.id} style={{borderBottom:"1px solid #f9f9f9"}}><td style={{padding:"12px 16px"}}><Pill label={d.dir==="owes_us"?"↓ Owed to us":"↑ We owe"} type={d.dir==="owes_us"?"green":"red"}/></td><td style={{padding:"12px 16px",fontSize:"13px",fontWeight:"700"}}>{d.party}</td><td style={{padding:"12px 16px",fontSize:"13px",fontWeight:"900"}}>{fmt(d.amount)}</td><td style={{padding:"12px 16px",fontSize:"12px",color:"#aaa"}}>{d.due}</td><td style={{padding:"12px 16px"}}><Pill label={d.status} type={d.status==="overdue"?"red":"amber"}/></td></tr>)}</tbody></table></div></Card></div>);
-      case "reports":return(<div><SectionHead title="Reports & Analytics"/><div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:"14px",marginBottom:"20px"}}><StatCard icon="💰" label="Total Revenue" value="₦1,389,500"/><StatCard icon="💸" label="Total Expenses" value="₦935,000"/><StatCard icon="📈" label="Net Profit" value="₦454,500"/></div><Card style={{padding:"24px",marginBottom:"20px"}}><div style={{fontWeight:"800",fontSize:"16px",marginBottom:"20px"}}>Revenue vs Expenses (6 months)</div>{["Jan","Feb","Mar","Apr","May","Jun"].map((m,i)=>{const rev=[180000,210000,195000,250000,270000,284500];const exp=[120000,135000,140000,160000,180000,200000];return<div key={m} style={{display:"flex",alignItems:"center",gap:"12px",marginBottom:"12px"}}><span style={{width:"28px",fontSize:"12px",color:"#aaa"}}>{m}</span><div style={{flex:1}}><div style={{display:"flex",alignItems:"center",gap:"8px",marginBottom:"3px"}}><div style={{height:"8px",borderRadius:"4px",background:TEAL,width:`${(rev[i]/284500)*100}%`,minWidth:"4px"}}/><span style={{fontSize:"11px",color:"#888"}}>₦{(rev[i]/1000).toFixed(0)}k</span></div><div style={{display:"flex",alignItems:"center",gap:"8px"}}><div style={{height:"8px",borderRadius:"4px",background:"#fecaca",width:`${(exp[i]/284500)*100}%`,minWidth:"4px"}}/><span style={{fontSize:"11px",color:"#aaa"}}>₦{(exp[i]/1000).toFixed(0)}k</span></div></div></div>;})}  </Card><div style={{display:"flex",gap:"10px"}}>{["Export PDF","Export Excel","Print Report"].map(l=><GhostBtn key={l}>{l}</GhostBtn>)}</div></div>);
+      case "reports":return(<div><SectionHead title="Reports & Analytics"/><div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:"14px",marginBottom:"20px"}}><StatCard icon="💰" label="Total Revenue" value="₦1,389,500"/><StatCard icon="💸" label="Total Expenses" value="₦935,000"/><StatCard icon="📈" label="Net Profit" value="₦454,500"/></div><Card style={{padding:"24px",marginBottom:"20px"}}><div style={{fontWeight:"800",fontSize:"16px",marginBottom:"20px"}}>Revenue vs Expenses (6 months)</div>{["Jan","Feb","Mar","Apr","May","Jun"].map((m,i)=>{const rev=[180000,210000,195000,250000,270000,284500];const exp=[120000,135000,140000,160000,180000,200000];return<div key={m} style={{display:"flex",alignItems:"center",gap:"12px",marginBottom:"12px"}}><span style={{width:"28px",fontSize:"12px",color:"#aaa"}}>{m}</span><div style={{flex:1}}><div style={{display:"flex",alignItems:"center",gap:"8px",marginBottom:"3px"}}><div style={{height:"8px",borderRadius:"4px",background:TEAL,width:((rev[i]/284500)*100)+"%",minWidth:"4px"}}/><span style={{fontSize:"11px",color:"#888"}}>₦{(rev[i]/1000).toFixed(0)}k</span></div><div style={{display:"flex",alignItems:"center",gap:"8px"}}><div style={{height:"8px",borderRadius:"4px",background:"#fecaca",width:((exp[i]/284500)*100)+"%",minWidth:"4px"}}/><span style={{fontSize:"11px",color:"#aaa"}}>₦{(exp[i]/1000).toFixed(0)}k</span></div></div></div>;})}  </Card><div style={{display:"flex",gap:"10px"}}>{["Export PDF","Export Excel","Print Report"].map(l=><GhostBtn key={l}>{l}</GhostBtn>)}</div></div>);
       case "settings":return(<div><SectionHead title="Settings"/><Card style={{padding:"28px",maxWidth:"520px"}}><div style={{marginBottom:"20px",padding:"14px",borderRadius:"12px",background:"#f0fdfa",border:"1px solid #ccfbf1",display:"flex",alignItems:"center",gap:"12px"}}><div style={{fontSize:"28px"}}>{bIcon}</div><div><div style={{fontWeight:"800",fontSize:"14px",color:"#0f172a"}}>{businessName(bType)}</div><div style={{fontSize:"12px",color:"#888",marginTop:"2px"}}>Your business type determines your consultation form</div></div></div>{[["Business Name",brand.name],["Owner Name",brand.owner],["Email",brand.email],["Phone",brand.phone],["WhatsApp",brand.whatsapp||""],["Business Hours",brand.hours||""],["Address",brand.address]].map(([l,v])=>(<div key={l} style={{marginBottom:"14px"}}><div style={{fontSize:"11px",fontWeight:"700",color:"#666",marginBottom:"6px"}}>{l}</div><input defaultValue={v} style={{width:"100%",padding:"10px 14px",borderRadius:"10px",border:"1px solid #e5e7eb",fontSize:"13px",outline:"none",boxSizing:"border-box"}}/></div>))}<Toggle label="Visible on CareFind" desc="Allow patients to find your business on the public CareFind search platform" value={brand.visibleOnCareFind||false} onChange={()=>{}}/><TealBtn style={{width:"100%",padding:"12px",marginTop:"16px"}}>Save Changes</TealBtn></Card></div>);
       default:return(<div style={{display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",height:"60vh",textAlign:"center"}}><div style={{fontSize:"56px",marginBottom:"16px"}}>🔨</div><div style={{fontSize:"20px",fontWeight:"800",marginBottom:"8px"}}>{(NAV_ITEMS.find(n=>n[0]===page)||[])[2]||page}</div><div style={{fontSize:"14px",color:"#aaa"}}>Coming soon</div></div>);
     }
@@ -1089,7 +1102,7 @@ function BusinessDashboard({ brand, onLogout }) {
 export default function CareHub() {
   const [screen,setScreen]=useState("landing");const [brands,setBrands]=useState(INIT_BRANDS);const [currentBrand,setCurrentBrand]=useState(null);
   const handleSubmit=data=>{
-    setBrands(prev=>[...prev,{id:prev.length+1,name:data.businessName,owner:`${data.firstName} ${data.lastName}`,email:data.ownerEmail,phone:data.ownerPhone||"--",whatsapp:data.whatsapp||"",address:data.address||"--",state:data.state||"",city:data.city||"",lat:parseFloat(data.lat)||0,lng:parseFloat(data.lng)||0,hours:data.businessHours||"",mapsLink:data.mapsLink||"",status:"pending",date:new Date().toLocaleDateString("en-NG"),password:data.password,type:data.businessType||"skincare",visibleOnCareFind:data.visibleOnCareFind!==false}]);
+    setBrands(prev=>[...prev,{id:prev.length+1,name:data.businessName,owner:data.firstName+" "+data.lastName,email:data.ownerEmail,phone:data.ownerPhone||"--",whatsapp:data.whatsapp||"",address:data.address||"--",state:data.state||"",city:data.city||"",lat:parseFloat(data.lat)||0,lng:parseFloat(data.lng)||0,hours:data.businessHours||"",mapsLink:data.mapsLink||"",status:"pending",date:new Date().toLocaleDateString("en-NG"),password:data.password,type:data.businessType||"skincare",visibleOnCareFind:data.visibleOnCareFind!==false}]);
   };
   if(screen==="landing") return<LandingPage onLogin={()=>setScreen("login")} onRegister={()=>setScreen("register")}/>;
   if(screen==="register") return<Registration onBack={()=>setScreen("login")} onSubmitted={handleSubmit}/>;
