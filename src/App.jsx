@@ -30,6 +30,15 @@ async function dbLoginBusiness(email, password) {
   const r = await sbFetch("businesses?email=eq." + encodeURIComponent(email) + "&password=eq." + encodeURIComponent(password) + "&select=*");
   return r[0] || null;
 }
+async function dbLoginAny(email, password) {
+  // Try business owner first
+  const biz = await dbLoginBusiness(email, password);
+  if(biz) return {type:"owner", data:biz};
+  // Try staff
+  const staff = await dbLoginStaff(email, password);
+  if(staff) return {type:"staff", data:staff};
+  return null;
+}
 async function dbRegisterBusiness(data) {
   return sbFetch("businesses", { method: "POST", body: JSON.stringify(data) });
 }
@@ -354,12 +363,22 @@ function LoginScreen({ brands, onAdminLogin, onBrandLogin, onRegister, onHome })
     try {
       // Check super admin first
       if(email.toLowerCase()===ADMIN_EMAIL&&pass===ADMIN_PASS){onAdminLogin();setLoading(false);return;}
-      // Check real database
+      // Check business owner
       const b = await dbLoginBusiness(email.toLowerCase(), pass);
       if(b){
         if(b.status==="pending"){setErr("Your account is pending admin approval. You will be notified once approved.");setLoading(false);return;}
         if(b.status==="suspended"){setErr("Your account has been suspended. Please contact support@carehub.ng");setLoading(false);return;}
-        onBrandLogin(b);setLoading(false);return;
+        onBrandLogin(b, null);setLoading(false);return;
+      }
+      // Check staff member
+      const s = await dbLoginStaff(email.toLowerCase(), pass);
+      if(s){
+        if(s.status!=="active"){setErr("Your staff account is inactive. Please contact your business owner.");setLoading(false);return;}
+        // Get the business this staff belongs to
+        const biz = await sbFetch("businesses?id=eq."+s.business_id+"&select=*");
+        if(biz&&biz[0]){
+          onBrandLogin(biz[0], s);setLoading(false);return;
+        }
       }
       setErr("Incorrect email or password. Please try again.");
     } catch(e) {
@@ -793,8 +812,801 @@ function RestockModal({ product, onClose, setProducts, showToast }) {
   );
 }
 
+
+// ══════════════════════════════════════════════════════════════════════════════
+// APPOINTMENTS PAGE — Fully working with database
+// ══════════════════════════════════════════════════════════════════════════════
+function AppointmentsPage({ brand, currentUser }) {
+  const [appointments,setAppointments]=useState([]);
+  const [loading,setLoading]=useState(true);
+  const [showAdd,setShowAdd]=useState(false);
+  const [form,setForm]=useState({});
+  const [saving,setSaving]=useState(false);
+  const [toast,setToast]=useState("");
+  const [filter,setFilter]=useState("all");
+  const showToast=msg=>{setToast(msg);setTimeout(()=>setToast(""),3000);};
+  const f=(k,v)=>setForm(p=>({...p,[k]:v}));
+
+  useEffect(()=>{load();},[]);
+  async function load(){
+    try{ const a=await dbGetAppointments(brand.id); setAppointments(a||[]); }catch(e){}
+    setLoading(false);
+  }
+
+  async function save(){
+    if(!form.clientName||!form.date||!form.time){ alert("Please fill in client name, date and time."); return; }
+    setSaving(true);
+    try{
+      await dbAddAppointment({business_id:brand.id,client_name:form.clientName,service:form.service||"",date:form.date,time:form.time,status:"pending",staff_name:form.staffName||"",notes:form.notes||""});
+      showToast("Appointment booked!");
+      setForm({});setShowAdd(false);load();
+    }catch(e){alert("Error saving appointment.");}
+    setSaving(false);
+  }
+
+  async function updateStatus(id,status){
+    try{ await dbUpdateAppointment(id,{status}); load(); showToast("Status updated!"); }catch(e){}
+  }
+
+  const filtered=filter==="all"?appointments:appointments.filter(a=>a.status===filter);
+  const today=new Date().toISOString().split("T")[0];
+  const todayAppts=appointments.filter(a=>a.date===today);
+
+  return(
+    <div>
+      <SectionHead title="Appointments" sub="Manage all bookings" btn="+ New Appointment" onBtn={()=>setShowAdd(true)}/>
+      <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:"14px",marginBottom:"20px"}}>
+        <StatCard icon="📅" label="Today" value={todayAppts.length} sub={todayAppts.filter(a=>a.status==="confirmed").length+" confirmed"}/>
+        <StatCard icon="⏳" label="Pending" value={appointments.filter(a=>a.status==="pending").length} alert={appointments.filter(a=>a.status==="pending").length>0}/>
+        <StatCard icon="✅" label="Total This Month" value={appointments.length}/>
+      </div>
+      <div style={{display:"flex",gap:"8px",marginBottom:"16px",flexWrap:"wrap"}}>
+        {["all","pending","confirmed","completed","cancelled"].map(s=>(
+          <button key={s} onClick={()=>setFilter(s)} style={{padding:"7px 14px",borderRadius:"10px",border:"none",cursor:"pointer",fontSize:"12px",fontWeight:"700",background:filter===s?"#0f766e":"#f3f4f6",color:filter===s?"white":"#666",textTransform:"capitalize"}}>{s}</button>
+        ))}
+      </div>
+      {loading?<div style={{textAlign:"center",padding:"40px",color:"#aaa"}}>⏳ Loading...</div>
+      :filtered.length===0?<div style={{textAlign:"center",padding:"60px",color:"#ccc"}}><div style={{fontSize:"40px",marginBottom:"12px"}}>📅</div><div>No appointments yet</div></div>
+      :<Card>
+        <div style={{overflowX:"auto"}}>
+          <table style={{width:"100%",borderCollapse:"collapse"}}>
+            <thead><tr style={{borderBottom:"1px solid #f5f5f5",background:"#fafafa"}}>{["Client","Service","Date","Time","Staff","Status","Actions"].map(h=><th key={h} style={{padding:"12px 16px",textAlign:"left",fontSize:"11px",fontWeight:"700",color:"#aaa",textTransform:"uppercase",whiteSpace:"nowrap"}}>{h}</th>)}</tr></thead>
+            <tbody>{filtered.map(a=>(
+              <tr key={a.id} style={{borderBottom:"1px solid #f9f9f9"}}>
+                <td style={{padding:"12px 16px"}}><div style={{display:"flex",alignItems:"center",gap:"8px"}}><Avatar name={a.client_name} size={30}/><span style={{fontWeight:"700",fontSize:"13px"}}>{a.client_name}</span></div></td>
+                <td style={{padding:"12px 16px",fontSize:"13px",color:"#666"}}>{a.service||"—"}</td>
+                <td style={{padding:"12px 16px",fontSize:"13px",fontWeight:"700"}}>{a.date}</td>
+                <td style={{padding:"12px 16px",fontSize:"13px",color:"#555"}}>{a.time}</td>
+                <td style={{padding:"12px 16px",fontSize:"13px",color:"#888"}}>{a.staff_name||"—"}</td>
+                <td style={{padding:"12px 16px"}}><Pill label={a.status} type={a.status==="confirmed"?"green":a.status==="completed"?"teal":a.status==="cancelled"?"red":"amber"}/></td>
+                <td style={{padding:"12px 16px"}}>
+                  <div style={{display:"flex",gap:"6px",flexWrap:"wrap"}}>
+                    {a.status==="pending"&&<button onClick={()=>updateStatus(a.id,"confirmed")} style={{padding:"5px 10px",borderRadius:"8px",border:"none",background:"#059669",color:"white",fontWeight:"700",fontSize:"11px",cursor:"pointer"}}>Confirm</button>}
+                    {a.status==="confirmed"&&<button onClick={()=>updateStatus(a.id,"completed")} style={{padding:"5px 10px",borderRadius:"8px",border:"none",background:"#0f766e",color:"white",fontWeight:"700",fontSize:"11px",cursor:"pointer"}}>Complete</button>}
+                    {a.status!=="cancelled"&&<button onClick={()=>updateStatus(a.id,"cancelled")} style={{padding:"5px 10px",borderRadius:"8px",border:"none",background:"#fef2f2",color:"#dc2626",fontWeight:"700",fontSize:"11px",cursor:"pointer"}}>Cancel</button>}
+                  </div>
+                </td>
+              </tr>
+            ))}</tbody>
+          </table>
+        </div>
+      </Card>}
+
+      <Modal show={showAdd} onClose={()=>{setShowAdd(false);setForm({});}} title="New Appointment"
+        footer={<><GhostBtn onClick={()=>{setShowAdd(false);setForm({});}} style={{flex:1,padding:"12px"}}>Cancel</GhostBtn><TealBtn onClick={save} style={{flex:1,padding:"12px"}}>{saving?"Saving...":"Book Appointment"}</TealBtn></>}>
+        <div style={{display:"flex",flexDirection:"column",gap:"14px"}}>
+          <Inp label="Client Name *" value={form.clientName} onChange={v=>f("clientName",v)} placeholder="Client full name" required/>
+          <Inp label="Service" value={form.service} onChange={v=>f("service",v)} placeholder="e.g. Facial Treatment, Consultation"/>
+          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"12px"}}>
+            <Inp label="Date *" value={form.date} onChange={v=>f("date",v)} type="date" required/>
+            <Inp label="Time *" value={form.time} onChange={v=>f("time",v)} type="time" required/>
+          </div>
+          <Inp label="Staff / Therapist" value={form.staffName} onChange={v=>f("staffName",v)} placeholder="Assigned staff name"/>
+          <Textarea label="Notes" value={form.notes} onChange={v=>f("notes",v)} placeholder="Any special notes..." rows={2}/>
+        </div>
+      </Modal>
+      <Toast msg={toast}/>
+    </div>
+  );
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+// CLIENTS PAGE — Fully working with database
+// ══════════════════════════════════════════════════════════════════════════════
+function ClientsPage({ brand }) {
+  const [clients,setClients]=useState([]);
+  const [loading,setLoading]=useState(true);
+  const [showAdd,setShowAdd]=useState(false);
+  const [selected,setSelected]=useState(null);
+  const [form,setForm]=useState({});
+  const [saving,setSaving]=useState(false);
+  const [search,setSearch]=useState("");
+  const [toast,setToast]=useState("");
+  const showToast=msg=>{setToast(msg);setTimeout(()=>setToast(""),3000);};
+  const f=(k,v)=>setForm(p=>({...p,[k]:v}));
+
+  useEffect(()=>{load();},[]);
+  async function load(){
+    try{ const c=await dbGetClients(brand.id); setClients(c||[]); }catch(e){}
+    setLoading(false);
+  }
+
+  async function save(){
+    if(!form.fullName||!form.phone){ alert("Please enter client name and phone number."); return; }
+    setSaving(true);
+    try{
+      await dbAddClient({business_id:brand.id,full_name:form.fullName,phone:form.phone,email:form.email||"",address:form.address||"",date_of_birth:form.dob||"",gender:form.gender||"",notes:form.notes||""});
+      showToast("Client added!");setForm({});setShowAdd(false);load();
+    }catch(e){alert("Error saving client.");}
+    setSaving(false);
+  }
+
+  const filtered=clients.filter(c=>c.full_name.toLowerCase().includes(search.toLowerCase())||( c.phone&&c.phone.includes(search)));
+
+  return(
+    <div>
+      <SectionHead title="Clients" sub="All your client records" btn="+ Add Client" onBtn={()=>setShowAdd(true)}/>
+      <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:"14px",marginBottom:"20px"}}>
+        <StatCard icon="👥" label="Total Clients" value={clients.length}/>
+        <StatCard icon="🆕" label="New This Month" value={clients.filter(c=>c.created_at&&c.created_at.startsWith(new Date().toISOString().slice(0,7))).length}/>
+        <StatCard icon="💰" label="Total Spent" value={fmt(clients.reduce((s,c)=>s+(c.total_spend||0),0))}/>
+      </div>
+      <div style={{marginBottom:"16px"}}>
+        <input value={search} onChange={e=>setSearch(e.target.value)} placeholder="Search by name or phone..."
+          style={{width:"100%",padding:"10px 16px",borderRadius:"12px",border:"1px solid #e5e7eb",fontSize:"13px",outline:"none",boxSizing:"border-box"}}/>
+      </div>
+      {loading?<div style={{textAlign:"center",padding:"40px",color:"#aaa"}}>⏳ Loading...</div>
+      :filtered.length===0?<div style={{textAlign:"center",padding:"60px",color:"#ccc"}}><div style={{fontSize:"40px",marginBottom:"12px"}}>👥</div><div>{search?"No clients found":"No clients yet. Add your first client!"}</div></div>
+      :<div style={{display:"flex",flexDirection:"column",gap:"10px"}}>
+        {filtered.map(c=>(
+          <Card key={c.id} style={{padding:"16px",cursor:"pointer"}} onClick={()=>setSelected(c)}>
+            <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:"12px"}}>
+              <div style={{display:"flex",alignItems:"center",gap:"14px"}}>
+                <Avatar name={c.full_name} size={44} bg="linear-gradient(135deg,#8b5cf6,#a78bfa)"/>
+                <div>
+                  <div style={{fontWeight:"800",fontSize:"15px"}}>{c.full_name}</div>
+                  <div style={{fontSize:"12px",color:"#888",marginTop:"2px"}}>{c.phone||"No phone"} {c.email?" · "+c.email:""}</div>
+                  <div style={{fontSize:"12px",color:"#888",marginTop:"2px"}}>{c.gender||""} {c.date_of_birth?" · DOB: "+c.date_of_birth:""}</div>
+                </div>
+              </div>
+              <div style={{textAlign:"right"}}>
+                <div style={{fontSize:"16px",fontWeight:"900",color:TEALC}}>{fmt(c.total_spend||0)}</div>
+                <div style={{fontSize:"11px",color:"#aaa",marginTop:"2px"}}>{c.visit_count||0} visits</div>
+              </div>
+            </div>
+          </Card>
+        ))}
+      </div>}
+
+      <Modal show={showAdd} onClose={()=>{setShowAdd(false);setForm({});}} title="Add New Client"
+        footer={<><GhostBtn onClick={()=>{setShowAdd(false);setForm({});}} style={{flex:1,padding:"12px"}}>Cancel</GhostBtn><TealBtn onClick={save} style={{flex:1,padding:"12px"}}>{saving?"Saving...":"Add Client"}</TealBtn></>}>
+        <div style={{display:"flex",flexDirection:"column",gap:"14px"}}>
+          <Inp label="Full Name *" value={form.fullName} onChange={v=>f("fullName",v)} placeholder="Client full name" required/>
+          <Inp label="Phone Number *" value={form.phone} onChange={v=>f("phone",v)} placeholder="08012345678" required/>
+          <Inp label="Email" value={form.email} onChange={v=>f("email",v)} type="email" placeholder="client@email.com"/>
+          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"12px"}}>
+            <Inp label="Date of Birth" value={form.dob} onChange={v=>f("dob",v)} type="date"/>
+            <Sel label="Gender" value={form.gender} onChange={v=>f("gender",v)} options={["Male","Female","Other"]}/>
+          </div>
+          <Inp label="Address" value={form.address} onChange={v=>f("address",v)} placeholder="Home address"/>
+          <Textarea label="Notes" value={form.notes} onChange={v=>f("notes",v)} placeholder="Any notes about this client..." rows={2}/>
+        </div>
+      </Modal>
+
+      <Modal show={!!selected} onClose={()=>setSelected(null)} title="Client Details">
+        {selected&&<div>
+          <div style={{display:"flex",alignItems:"center",gap:"16px",marginBottom:"20px",padding:"16px",borderRadius:"12px",background:"#f9fafb"}}>
+            <Avatar name={selected.full_name} size={56} bg="linear-gradient(135deg,#8b5cf6,#a78bfa)"/>
+            <div>
+              <div style={{fontSize:"20px",fontWeight:"900",color:"#0f172a"}}>{selected.full_name}</div>
+              <div style={{fontSize:"13px",color:"#888",marginTop:"4px"}}>{selected.phone}</div>
+              <div style={{display:"flex",gap:"12px",marginTop:"8px"}}>
+                <div style={{textAlign:"center"}}><div style={{fontSize:"18px",fontWeight:"900",color:TEALC}}>{fmt(selected.total_spend||0)}</div><div style={{fontSize:"11px",color:"#aaa"}}>Total Spent</div></div>
+                <div style={{textAlign:"center"}}><div style={{fontSize:"18px",fontWeight:"900"}}>{selected.visit_count||0}</div><div style={{fontSize:"11px",color:"#aaa"}}>Visits</div></div>
+              </div>
+            </div>
+          </div>
+          {[["Email",selected.email||"—"],["Gender",selected.gender||"—"],["DOB",selected.date_of_birth||"—"],["Address",selected.address||"—"],["Notes",selected.notes||"—"],["Joined",selected.created_at?selected.created_at.split("T")[0]:"—"]].map(([l,v])=>(
+            <div key={l} style={{display:"flex",justifyContent:"space-between",padding:"8px 0",borderBottom:"1px solid #f9f9f9",fontSize:"13px"}}>
+              <span style={{color:"#888",fontWeight:"600"}}>{l}</span><span style={{color:"#0f172a",textAlign:"right",maxWidth:"240px"}}>{v}</span>
+            </div>
+          ))}
+        </div>}
+      </Modal>
+      <Toast msg={toast}/>
+    </div>
+  );
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+// EXPENSES PAGE — Fully working with database
+// ══════════════════════════════════════════════════════════════════════════════
+function ExpensesPage({ brand }) {
+  const [expenses,setExpenses]=useState([]);
+  const [loading,setLoading]=useState(true);
+  const [showAdd,setShowAdd]=useState(false);
+  const [form,setForm]=useState({date:todayDate()});
+  const [saving,setSaving]=useState(false);
+  const [toast,setToast]=useState("");
+  const [filterMonth,setFilterMonth]=useState(new Date().toISOString().slice(0,7));
+  const showToast=msg=>{setToast(msg);setTimeout(()=>setToast(""),3000);};
+  const f=(k,v)=>setForm(p=>({...p,[k]:v}));
+
+  useEffect(()=>{load();},[]);
+  async function load(){
+    try{ const e=await dbGetExpenses(brand.id); setExpenses(e||[]); }catch(e){}
+    setLoading(false);
+  }
+
+  async function save(){
+    if(!form.category||!form.amount){ alert("Please enter category and amount."); return; }
+    setSaving(true);
+    try{
+      await dbAddExpense({business_id:brand.id,category:form.category,description:form.description||"",amount:parseFloat(form.amount)||0,date:form.date||todayDate(),staff_name:form.staffName||""});
+      showToast("Expense logged!");setForm({date:todayDate()});setShowAdd(false);load();
+    }catch(e){alert("Error saving expense.");}
+    setSaving(false);
+  }
+
+  async function deleteExpense(id){
+    if(!window.confirm("Delete this expense?")) return;
+    try{ await dbDeleteExpense(id); load(); showToast("Expense deleted."); }catch(e){}
+  }
+
+  const filtered=filterMonth?expenses.filter(e=>e.created_at&&e.created_at.startsWith(filterMonth)):expenses;
+  const totalFiltered=filtered.reduce((s,e)=>s+(e.amount||0),0);
+  const byCategory={};
+  filtered.forEach(e=>{ byCategory[e.category]=(byCategory[e.category]||0)+(e.amount||0); });
+
+  const EXPENSE_CATS=["Rent","Salary","Utilities","Supplies","Equipment","Transport","Marketing","Maintenance","Insurance","Tax","Other"];
+
+  return(
+    <div>
+      <SectionHead title="Expenses" sub="Track all business spending" btn="+ Log Expense" onBtn={()=>setShowAdd(true)}/>
+      <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:"14px",marginBottom:"20px"}}>
+        <StatCard icon="💸" label="Total This Period" value={fmt(totalFiltered)}/>
+        <StatCard icon="📊" label="Categories" value={Object.keys(byCategory).length}/>
+        <StatCard icon="📋" label="Transactions" value={filtered.length}/>
+      </div>
+
+      {/* Category breakdown */}
+      {Object.keys(byCategory).length>0&&<Card style={{padding:"20px",marginBottom:"20px"}}>
+        <div style={{fontWeight:"800",fontSize:"15px",marginBottom:"14px"}}>Breakdown by Category</div>
+        {Object.entries(byCategory).sort((a,b)=>b[1]-a[1]).map(([cat,amt])=>(
+          <div key={cat} style={{display:"flex",alignItems:"center",gap:"12px",marginBottom:"10px"}}>
+            <span style={{fontSize:"12px",color:"#555",width:"120px",fontWeight:"600"}}>{cat}</span>
+            <div style={{flex:1,height:"8px",background:"#f0f0f0",borderRadius:"4px",overflow:"hidden"}}>
+              <div style={{height:"100%",width:(totalFiltered>0?(amt/totalFiltered)*100:0)+"%",background:TEAL,borderRadius:"4px"}}/>
+            </div>
+            <span style={{fontSize:"13px",fontWeight:"700",width:"100px",textAlign:"right"}}>{fmt(amt)}</span>
+          </div>
+        ))}
+      </Card>}
+
+      <div style={{display:"flex",gap:"10px",marginBottom:"16px",alignItems:"center",flexWrap:"wrap"}}>
+        <input type="month" value={filterMonth} onChange={e=>setFilterMonth(e.target.value)}
+          style={{padding:"8px 14px",borderRadius:"10px",border:"1px solid #e5e7eb",fontSize:"13px",outline:"none"}}/>
+        <button onClick={()=>setFilterMonth("")} style={{padding:"8px 14px",borderRadius:"10px",border:"1px solid #e5e7eb",background:"white",color:"#555",fontSize:"13px",cursor:"pointer"}}>All Time</button>
+      </div>
+
+      {loading?<div style={{textAlign:"center",padding:"40px",color:"#aaa"}}>⏳ Loading...</div>
+      :filtered.length===0?<div style={{textAlign:"center",padding:"60px",color:"#ccc"}}><div style={{fontSize:"40px",marginBottom:"12px"}}>💸</div><div>No expenses recorded yet</div></div>
+      :<Card>
+        <div style={{overflowX:"auto"}}>
+          <table style={{width:"100%",borderCollapse:"collapse"}}>
+            <thead><tr style={{borderBottom:"1px solid #f5f5f5",background:"#fafafa"}}>{["Category","Description","Amount","Date","Staff","Action"].map(h=><th key={h} style={{padding:"12px 16px",textAlign:"left",fontSize:"11px",fontWeight:"700",color:"#aaa",textTransform:"uppercase",whiteSpace:"nowrap"}}>{h}</th>)}</tr></thead>
+            <tbody>{filtered.map(e=>(
+              <tr key={e.id} style={{borderBottom:"1px solid #f9f9f9"}}>
+                <td style={{padding:"12px 16px"}}><Pill label={e.category} type="teal"/></td>
+                <td style={{padding:"12px 16px",fontSize:"13px",color:"#555"}}>{e.description||"—"}</td>
+                <td style={{padding:"12px 16px",fontSize:"14px",fontWeight:"900",color:"#dc2626"}}>{fmt(e.amount)}</td>
+                <td style={{padding:"12px 16px",fontSize:"12px",color:"#aaa"}}>{e.date||e.created_at?.split("T")[0]}</td>
+                <td style={{padding:"12px 16px",fontSize:"13px",color:"#888"}}>{e.staff_name||"—"}</td>
+                <td style={{padding:"12px 16px"}}><button onClick={()=>deleteExpense(e.id)} style={{padding:"5px 10px",borderRadius:"8px",border:"none",background:"#fef2f2",color:"#dc2626",fontWeight:"700",fontSize:"11px",cursor:"pointer"}}>Delete</button></td>
+              </tr>
+            ))}</tbody>
+          </table>
+        </div>
+      </Card>}
+
+      <Modal show={showAdd} onClose={()=>{setShowAdd(false);setForm({date:todayDate()});}} title="Log Expense"
+        footer={<><GhostBtn onClick={()=>{setShowAdd(false);setForm({date:todayDate()});}} style={{flex:1,padding:"12px"}}>Cancel</GhostBtn><TealBtn onClick={save} style={{flex:1,padding:"12px"}}>{saving?"Saving...":"Save Expense"}</TealBtn></>}>
+        <div style={{display:"flex",flexDirection:"column",gap:"14px"}}>
+          <Sel label="Category *" value={form.category} onChange={v=>f("category",v)} options={EXPENSE_CATS} required/>
+          <Inp label="Description" value={form.description} onChange={v=>f("description",v)} placeholder="What was this expense for?"/>
+          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"12px"}}>
+            <Inp label="Amount (₦) *" value={form.amount} onChange={v=>f("amount",v)} type="number" placeholder="0" required/>
+            <Inp label="Date" value={form.date} onChange={v=>f("date",v)} type="date"/>
+          </div>
+          <Inp label="Recorded by" value={form.staffName} onChange={v=>f("staffName",v)} placeholder="Staff name"/>
+        </div>
+      </Modal>
+      <Toast msg={toast}/>
+    </div>
+  );
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+// DEBTS & PURCHASES PAGE
+// ══════════════════════════════════════════════════════════════════════════════
+function DebtsPage({ brand }) {
+  const [tab,setTab]=useState("debts");
+  const [debts,setDebts]=useState([]);
+  const [purchases,setPurchases]=useState([]);
+  const [loading,setLoading]=useState(true);
+  const [showAdd,setShowAdd]=useState(false);
+  const [form,setForm]=useState({});
+  const [saving,setSaving]=useState(false);
+  const [toast,setToast]=useState("");
+  const [search,setSearch]=useState("");
+  const [filterMonth,setFilterMonth]=useState("");
+  const showToast=msg=>{setToast(msg);setTimeout(()=>setToast(""),3000);};
+  const f=(k,v)=>setForm(p=>({...p,[k]:v}));
+
+  useEffect(()=>{load();},[]);
+  async function load(){
+    try{
+      const [d,p]=await Promise.all([dbGetDebts(brand.id),dbGetPurchases(brand.id)]);
+      setDebts(d||[]);setPurchases(p||[]);
+    }catch(e){}
+    setLoading(false);
+  }
+
+  async function saveDebt(){
+    if(!form.party||!form.amount){ alert("Please enter party name and amount."); return; }
+    setSaving(true);
+    try{
+      const amt=parseFloat(form.amount)||0;
+      const paid=parseFloat(form.amountPaid)||0;
+      await dbAddDebt({business_id:brand.id,direction:form.direction||"owes_us",party_name:form.party,amount:amt,amount_paid:paid,balance:amt-paid,due_date:form.dueDate||"",status:paid>=amt?"paid":"pending",description:form.description||""});
+      showToast("Debt recorded!");setForm({});setShowAdd(false);load();
+    }catch(e){alert("Error saving.");}
+    setSaving(false);
+  }
+
+  async function savePurchase(){
+    if(!form.supplier||!form.totalCost){ alert("Please enter supplier name and total cost."); return; }
+    setSaving(true);
+    try{
+      const total=parseFloat(form.totalCost)||0;
+      const paid=parseFloat(form.amountPaid)||0;
+      await dbAddPurchase({business_id:brand.id,supplier_name:form.supplier,product_name:form.product||"",quantity:parseInt(form.qty)||0,cost_price:parseFloat(form.costPrice)||0,total_cost:total,amount_paid:paid,balance:total-paid,supply_date:form.supplyDate||todayDate(),due_date:form.dueDate||"",status:paid>=total?"paid":"pending",notes:form.notes||""});
+      showToast("Purchase recorded!");setForm({});setShowAdd(false);load();
+    }catch(e){alert("Error saving.");}
+    setSaving(false);
+  }
+
+  async function markPaid(item,isPurchase){
+    try{
+      if(isPurchase){ await dbUpdatePurchase(item.id,{amount_paid:item.total_cost,balance:0,status:"paid"}); }
+      else{ await dbUpdateDebt(item.id,{amount_paid:item.amount,balance:0,status:"paid"}); }
+      load();showToast("Marked as paid!");
+    }catch(e){}
+  }
+
+  const filteredDebts=debts.filter(d=>{
+    const matchSearch=!search||d.party_name.toLowerCase().includes(search.toLowerCase());
+    const matchMonth=!filterMonth||d.created_at?.startsWith(filterMonth);
+    return matchSearch&&matchMonth;
+  });
+  const filteredPurchases=purchases.filter(p=>{
+    const matchSearch=!search||p.supplier_name.toLowerCase().includes(search.toLowerCase())||( p.product_name&&p.product_name.toLowerCase().includes(search.toLowerCase()));
+    const matchMonth=!filterMonth||p.created_at?.startsWith(filterMonth);
+    return matchSearch&&matchMonth;
+  });
+
+  const totalOwedToUs=debts.filter(d=>d.direction==="owes_us").reduce((s,d)=>s+(d.balance||0),0);
+  const totalWeOwe=debts.filter(d=>d.direction==="we_owe").reduce((s,d)=>s+(d.balance||0),0);
+  const totalPurchaseBalance=purchases.reduce((s,p)=>s+(p.balance||0),0);
+
+  return(
+    <div>
+      <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:"20px",flexWrap:"wrap",gap:"10px"}}>
+        <div><div style={{fontSize:"20px",fontWeight:"900",color:"#111"}}>Debts & Purchases</div><div style={{fontSize:"13px",color:"#888",marginTop:"3px"}}>Track money owed and supplier purchases</div></div>
+        <TealBtn onClick={()=>setShowAdd(true)}>+ {tab==="purchases"?"Record Purchase":"Record Debt"}</TealBtn>
+      </div>
+
+      <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:"14px",marginBottom:"20px"}}>
+        <Card style={{padding:"18px",borderLeft:"4px solid #059669"}}><div style={{fontSize:"12px",color:"#888",fontWeight:"600"}}>Clients Owe You</div><div style={{fontSize:"22px",fontWeight:"900",color:"#059669",marginTop:"4px"}}>{fmt(totalOwedToUs)}</div></Card>
+        <Card style={{padding:"18px",borderLeft:"4px solid #ef4444"}}><div style={{fontSize:"12px",color:"#888",fontWeight:"600"}}>You Owe Others</div><div style={{fontSize:"22px",fontWeight:"900",color:"#dc2626",marginTop:"4px"}}>{fmt(totalWeOwe)}</div></Card>
+        <Card style={{padding:"18px",borderLeft:"4px solid #f59e0b"}}><div style={{fontSize:"12px",color:"#888",fontWeight:"600"}}>Supplier Balance</div><div style={{fontSize:"22px",fontWeight:"900",color:"#d97706",marginTop:"4px"}}>{fmt(totalPurchaseBalance)}</div></Card>
+      </div>
+
+      <div style={{display:"flex",gap:"8px",marginBottom:"16px",flexWrap:"wrap"}}>
+        {["debts","purchases"].map(t=><button key={t} onClick={()=>setTab(t)} style={{padding:"9px 20px",borderRadius:"10px",border:"none",cursor:"pointer",fontWeight:"700",fontSize:"13px",background:tab===t?"#0f766e":"#f3f4f6",color:tab===t?"white":"#666",textTransform:"capitalize"}}>{t}</button>)}
+        <input value={search} onChange={e=>setSearch(e.target.value)} placeholder={"Search "+(tab==="purchases"?"supplier or product":"party name")+"..."} style={{flex:1,minWidth:"180px",padding:"8px 14px",borderRadius:"10px",border:"1px solid #e5e7eb",fontSize:"13px",outline:"none"}}/>
+        <input type="month" value={filterMonth} onChange={e=>setFilterMonth(e.target.value)} style={{padding:"8px 12px",borderRadius:"10px",border:"1px solid #e5e7eb",fontSize:"13px",outline:"none"}}/>
+      </div>
+
+      {loading?<div style={{textAlign:"center",padding:"40px",color:"#aaa"}}>⏳ Loading...</div>
+      :tab==="debts"?(
+        filteredDebts.length===0?<div style={{textAlign:"center",padding:"60px",color:"#ccc"}}><div style={{fontSize:"40px",marginBottom:"12px"}}>🏦</div><div>No debts recorded</div></div>
+        :<Card><div style={{overflowX:"auto"}}><table style={{width:"100%",borderCollapse:"collapse"}}>
+          <thead><tr style={{borderBottom:"1px solid #f5f5f5",background:"#fafafa"}}>{["Direction","Party","Amount","Paid","Balance","Due Date","Status","Action"].map(h=><th key={h} style={{padding:"12px 16px",textAlign:"left",fontSize:"11px",fontWeight:"700",color:"#aaa",textTransform:"uppercase",whiteSpace:"nowrap"}}>{h}</th>)}</tr></thead>
+          <tbody>{filteredDebts.map(d=>(
+            <tr key={d.id} style={{borderBottom:"1px solid #f9f9f9"}}>
+              <td style={{padding:"12px 16px"}}><Pill label={d.direction==="owes_us"?"Owed to Us":"We Owe"} type={d.direction==="owes_us"?"green":"red"}/></td>
+              <td style={{padding:"12px 16px",fontWeight:"700",fontSize:"13px"}}>{d.party_name}</td>
+              <td style={{padding:"12px 16px",fontSize:"13px",fontWeight:"700"}}>{fmt(d.amount)}</td>
+              <td style={{padding:"12px 16px",fontSize:"13px",color:"#059669"}}>{fmt(d.amount_paid||0)}</td>
+              <td style={{padding:"12px 16px",fontSize:"13px",fontWeight:"900",color:d.balance>0?"#dc2626":"#059669"}}>{fmt(d.balance||0)}</td>
+              <td style={{padding:"12px 16px",fontSize:"12px",color:"#aaa"}}>{d.due_date||"—"}</td>
+              <td style={{padding:"12px 16px"}}><Pill label={d.status} type={d.status==="paid"?"green":d.status==="overdue"?"red":"amber"}/></td>
+              <td style={{padding:"12px 16px"}}>{d.status!=="paid"&&<button onClick={()=>markPaid(d,false)} style={{padding:"5px 10px",borderRadius:"8px",border:"none",background:"#059669",color:"white",fontWeight:"700",fontSize:"11px",cursor:"pointer"}}>Mark Paid</button>}</td>
+            </tr>
+          ))}</tbody>
+        </table></div></Card>
+      ):(
+        filteredPurchases.length===0?<div style={{textAlign:"center",padding:"60px",color:"#ccc"}}><div style={{fontSize:"40px",marginBottom:"12px"}}>🚚</div><div>No purchases recorded</div></div>
+        :<Card><div style={{overflowX:"auto"}}><table style={{width:"100%",borderCollapse:"collapse"}}>
+          <thead><tr style={{borderBottom:"1px solid #f5f5f5",background:"#fafafa"}}>{["Supplier","Product","Qty","Cost Price","Total","Paid","Balance","Supply Date","Status","Action"].map(h=><th key={h} style={{padding:"12px 16px",textAlign:"left",fontSize:"11px",fontWeight:"700",color:"#aaa",textTransform:"uppercase",whiteSpace:"nowrap"}}>{h}</th>)}</tr></thead>
+          <tbody>{filteredPurchases.map(p=>(
+            <tr key={p.id} style={{borderBottom:"1px solid #f9f9f9"}}>
+              <td style={{padding:"12px 16px",fontWeight:"700",fontSize:"13px"}}>{p.supplier_name}</td>
+              <td style={{padding:"12px 16px",fontSize:"13px",color:"#555"}}>{p.product_name||"—"}</td>
+              <td style={{padding:"12px 16px",fontSize:"13px"}}>{p.quantity||"—"}</td>
+              <td style={{padding:"12px 16px",fontSize:"13px"}}>{fmt(p.cost_price||0)}</td>
+              <td style={{padding:"12px 16px",fontSize:"13px",fontWeight:"700"}}>{fmt(p.total_cost||0)}</td>
+              <td style={{padding:"12px 16px",fontSize:"13px",color:"#059669"}}>{fmt(p.amount_paid||0)}</td>
+              <td style={{padding:"12px 16px",fontSize:"13px",fontWeight:"900",color:p.balance>0?"#dc2626":"#059669"}}>{fmt(p.balance||0)}</td>
+              <td style={{padding:"12px 16px",fontSize:"12px",color:"#aaa"}}>{p.supply_date||"—"}</td>
+              <td style={{padding:"12px 16px"}}><Pill label={p.status} type={p.status==="paid"?"green":"amber"}/></td>
+              <td style={{padding:"12px 16px"}}>{p.status!=="paid"&&<button onClick={()=>markPaid(p,true)} style={{padding:"5px 10px",borderRadius:"8px",border:"none",background:"#059669",color:"white",fontWeight:"700",fontSize:"11px",cursor:"pointer"}}>Mark Paid</button>}</td>
+            </tr>
+          ))}</tbody>
+        </table></div></Card>
+      )}
+
+      <Modal show={showAdd} onClose={()=>{setShowAdd(false);setForm({});}} title={tab==="purchases"?"Record Purchase":"Record Debt"}
+        footer={<><GhostBtn onClick={()=>{setShowAdd(false);setForm({});}} style={{flex:1,padding:"12px"}}>Cancel</GhostBtn><TealBtn onClick={tab==="purchases"?savePurchase:saveDebt} style={{flex:1,padding:"12px"}}>{saving?"Saving...":"Save"}</TealBtn></>}>
+        {tab==="debts"?(
+          <div style={{display:"flex",flexDirection:"column",gap:"14px"}}>
+            <div>
+              <div style={{fontSize:"11px",fontWeight:"700",color:"#666",marginBottom:"8px"}}>Direction</div>
+              <div style={{display:"flex",gap:"10px"}}>
+                {["owes_us","we_owe"].map(v=>(
+                  <label key={v} style={{display:"flex",alignItems:"center",gap:"6px",padding:"8px 14px",borderRadius:"8px",border:"1px solid"+(form.direction===v?TEALC:"#e5e7eb"),background:form.direction===v?"#f0fdfa":"white",cursor:"pointer",fontSize:"13px"}}>
+                    <input type="radio" checked={form.direction===v} onChange={()=>f("direction",v)} style={{accentColor:TEALC}}/>
+                    {v==="owes_us"?"Client Owes Us":"We Owe Someone"}
+                  </label>
+                ))}
+              </div>
+            </div>
+            <Inp label="Party Name *" value={form.party} onChange={v=>f("party",v)} placeholder="Client or supplier name" required/>
+            <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"12px"}}>
+              <Inp label="Total Amount (₦) *" value={form.amount} onChange={v=>f("amount",v)} type="number" placeholder="0" required/>
+              <Inp label="Amount Already Paid (₦)" value={form.amountPaid} onChange={v=>f("amountPaid",v)} type="number" placeholder="0"/>
+            </div>
+            <Inp label="Due Date" value={form.dueDate} onChange={v=>f("dueDate",v)} type="date"/>
+            <Textarea label="Description" value={form.description} onChange={v=>f("description",v)} placeholder="What is this debt for?" rows={2}/>
+          </div>
+        ):(
+          <div style={{display:"flex",flexDirection:"column",gap:"14px"}}>
+            <Inp label="Supplier Name *" value={form.supplier} onChange={v=>f("supplier",v)} placeholder="e.g. MedSupply Distributors" required/>
+            <Inp label="Product / Item Name" value={form.product} onChange={v=>f("product",v)} placeholder="e.g. Amoxicillin 500mg"/>
+            <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"12px"}}>
+              <Inp label="Quantity" value={form.qty} onChange={v=>f("qty",v)} type="number" placeholder="e.g. 100"/>
+              <Inp label="Cost Price per Unit (₦)" value={form.costPrice} onChange={v=>f("costPrice",v)} type="number" placeholder="0"/>
+            </div>
+            <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"12px"}}>
+              <Inp label="Total Cost (₦) *" value={form.totalCost} onChange={v=>f("totalCost",v)} type="number" placeholder="0" required/>
+              <Inp label="Amount Paid (₦)" value={form.amountPaid} onChange={v=>f("amountPaid",v)} type="number" placeholder="0"/>
+            </div>
+            {form.totalCost&&<div style={{padding:"10px 14px",borderRadius:"10px",background:"#fafafa",border:"1px solid #f0f0f0",display:"flex",justifyContent:"space-between",fontSize:"13px"}}>
+              <span style={{color:"#888"}}>Balance Remaining</span>
+              <span style={{fontWeight:"900",color:"#dc2626"}}>{fmt((parseFloat(form.totalCost)||0)-(parseFloat(form.amountPaid)||0))}</span>
+            </div>}
+            <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"12px"}}>
+              <Inp label="Supply Date" value={form.supplyDate} onChange={v=>f("supplyDate",v)} type="date"/>
+              <Inp label="Payment Due Date" value={form.dueDate} onChange={v=>f("dueDate",v)} type="date"/>
+            </div>
+            <Textarea label="Notes" value={form.notes} onChange={v=>f("notes",v)} placeholder="Any notes about this purchase..." rows={2}/>
+          </div>
+        )}
+      </Modal>
+      <Toast msg={toast}/>
+    </div>
+  );
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+// STAFF MANAGEMENT PAGE
+// ══════════════════════════════════════════════════════════════════════════════
+function StaffPage({ brand, currentUser }) {
+  const [staff,setStaff]=useState([]);
+  const [loading,setLoading]=useState(true);
+  const [showAdd,setShowAdd]=useState(false);
+  const [form,setForm]=useState({});
+  const [saving,setSaving]=useState(false);
+  const [toast,setToast]=useState("");
+  const showToast=msg=>{setToast(msg);setTimeout(()=>setToast(""),3000);};
+  const f=(k,v)=>setForm(p=>({...p,[k]:v}));
+  const isOwner=!currentUser||currentUser.role==="Owner";
+
+  useEffect(()=>{load();},[]);
+  async function load(){
+    try{ const s=await dbGetStaff(brand.id); setStaff(s||[]); }catch(e){}
+    setLoading(false);
+  }
+
+  async function save(){
+    if(!form.fullName||!form.email||!form.password||!form.role){ alert("Please fill in all required fields."); return; }
+    setSaving(true);
+    try{
+      await dbAddStaff({business_id:brand.id,full_name:form.fullName,email:form.email,password:form.password,role:form.role,phone:form.phone||"",status:"active"});
+      showToast("Staff member added!");setForm({});setShowAdd(false);load();
+    }catch(e){alert("Error. Email may already be registered.");}
+    setSaving(false);
+  }
+
+  async function toggleStatus(s){
+    try{ await dbUpdateStaff(s.id,{status:s.status==="active"?"inactive":"active"}); load(); showToast("Status updated!"); }catch(e){}
+  }
+
+  async function removeStaff(id){
+    if(!window.confirm("Remove this staff member?")) return;
+    try{ await dbDeleteStaff(id); load(); showToast("Staff removed."); }catch(e){}
+  }
+
+  const ROLES=["Owner","Manager","Pharmacist","Therapist","Receptionist","Cashier","Nurse","Doctor","Lab Technician"];
+  const roleColor=role=>role==="Owner"?"purple":role==="Manager"?"blue":role==="Doctor"||role==="Pharmacist"?"teal":"gray";
+
+  return(
+    <div>
+      <SectionHead title="Staff Management" sub="Manage your team and their access levels" btn={isOwner?"+ Add Staff Member":undefined} onBtn={isOwner?()=>setShowAdd(true):undefined}/>
+
+      {!isOwner&&<div style={{padding:"12px 16px",borderRadius:"12px",background:"#fffbeb",border:"1px solid #fcd34d",marginBottom:"20px",fontSize:"13px",color:"#92400e"}}>
+        ⚠️ Only the business Owner can add or remove staff members.
+      </div>}
+
+      <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:"14px",marginBottom:"20px"}}>
+        <StatCard icon="👤" label="Total Staff" value={staff.length}/>
+        <StatCard icon="✅" label="Active" value={staff.filter(s=>s.status==="active").length}/>
+        <StatCard icon="⏸" label="Inactive" value={staff.filter(s=>s.status!=="active").length}/>
+      </div>
+
+      {loading?<div style={{textAlign:"center",padding:"40px",color:"#aaa"}}>⏳ Loading...</div>
+      :staff.length===0?<div style={{textAlign:"center",padding:"60px",color:"#ccc"}}><div style={{fontSize:"40px",marginBottom:"12px"}}>👤</div><div>No staff added yet</div></div>
+      :<div style={{display:"flex",flexDirection:"column",gap:"10px"}}>
+        {staff.map(s=>(
+          <Card key={s.id} style={{padding:"18px",display:"flex",alignItems:"center",justifyContent:"space-between",gap:"12px",flexWrap:"wrap"}}>
+            <div style={{display:"flex",alignItems:"center",gap:"14px"}}>
+              <Avatar name={s.full_name} size={44} bg="linear-gradient(135deg,#8b5cf6,#a78bfa)"/>
+              <div>
+                <div style={{fontWeight:"800",fontSize:"15px"}}>{s.full_name}</div>
+                <div style={{fontSize:"12px",color:"#888",marginTop:"2px"}}>{s.email} {s.phone?" · "+s.phone:""}</div>
+                <div style={{display:"flex",gap:"6px",marginTop:"6px"}}>
+                  <Pill label={s.role} type={roleColor(s.role)}/>
+                  <Pill label={s.status==="active"?"Active":"Inactive"} type={s.status==="active"?"green":"gray"}/>
+                </div>
+              </div>
+            </div>
+            {isOwner&&<div style={{display:"flex",gap:"8px"}}>
+              <button onClick={()=>toggleStatus(s)} style={{padding:"6px 12px",borderRadius:"8px",border:"none",background:s.status==="active"?"#fffbeb":"#f0fdf4",color:s.status==="active"?"#d97706":"#059669",fontWeight:"700",fontSize:"12px",cursor:"pointer"}}>{s.status==="active"?"Deactivate":"Activate"}</button>
+              <button onClick={()=>removeStaff(s.id)} style={{padding:"6px 12px",borderRadius:"8px",border:"none",background:"#fef2f2",color:"#dc2626",fontWeight:"700",fontSize:"12px",cursor:"pointer"}}>Remove</button>
+            </div>}
+          </Card>
+        ))}
+      </div>}
+
+      <Modal show={showAdd} onClose={()=>{setShowAdd(false);setForm({});}} title="Add Staff Member"
+        footer={<><GhostBtn onClick={()=>{setShowAdd(false);setForm({});}} style={{flex:1,padding:"12px"}}>Cancel</GhostBtn><TealBtn onClick={save} style={{flex:1,padding:"12px"}}>{saving?"Saving...":"Add Staff"}</TealBtn></>}>
+        <div style={{display:"flex",flexDirection:"column",gap:"14px"}}>
+          <Inp label="Full Name *" value={form.fullName} onChange={v=>f("fullName",v)} placeholder="Staff full name" required/>
+          <Inp label="Email Address *" value={form.email} onChange={v=>f("email",v)} type="email" placeholder="staff@yourbusiness.ng" required/>
+          <Inp label="Phone Number" value={form.phone} onChange={v=>f("phone",v)} placeholder="08012345678"/>
+          <Sel label="Role *" value={form.role} onChange={v=>f("role",v)} options={ROLES} required/>
+          <Inp label="Password *" value={form.password} onChange={v=>f("password",v)} type="password" placeholder="Set a password for them" required/>
+          <div style={{padding:"12px",borderRadius:"10px",background:"#f0fdfa",fontSize:"12px",color:TEALC,lineHeight:"1.6"}}>
+            Staff will log in with their email and this password. Only Owner role can edit stock prices and delete records.
+          </div>
+        </div>
+      </Modal>
+      <Toast msg={toast}/>
+    </div>
+  );
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+// REPORTS PAGE — Full financial breakdown with export
+// ══════════════════════════════════════════════════════════════════════════════
+function ReportsPage({ brand }) {
+  const [sales,setSales]=useState([]);
+  const [expenses,setExpenses]=useState([]);
+  const [purchases,setPurchases]=useState([]);
+  const [loading,setLoading]=useState(true);
+  const [period,setPeriod]=useState("month");
+  const [customMonth,setCustomMonth]=useState(new Date().toISOString().slice(0,7));
+
+  useEffect(()=>{load();},[]);
+  async function load(){
+    try{
+      const [s,e,p]=await Promise.all([dbGetSales(brand.id),dbGetExpenses(brand.id),dbGetPurchases(brand.id)]);
+      setSales(s||[]);setExpenses(e||[]);setPurchases(p||[]);
+    }catch(e){}
+    setLoading(false);
+  }
+
+  const now=new Date();
+  const filterDate=item=>{
+    const d=item.created_at||"";
+    if(period==="today") return d.startsWith(now.toISOString().split("T")[0]);
+    if(period==="week"){const week=new Date(now-7*864e5);return new Date(d)>=week;}
+    if(period==="month") return d.startsWith(customMonth);
+    if(period==="year") return d.startsWith(String(now.getFullYear()));
+    return true;
+  };
+
+  const fSales=sales.filter(filterDate).filter(s=>!s.is_on_hold);
+  const fExpenses=expenses.filter(filterDate);
+  const fPurchases=purchases.filter(filterDate);
+
+  const totalRevenue=fSales.reduce((s,x)=>s+(x.total||0),0);
+  const totalExpenses=fExpenses.reduce((s,x)=>s+(x.amount||0),0);
+  const totalPurchases=fPurchases.reduce((s,x)=>s+(x.total_cost||0),0);
+  const netProfit=totalRevenue-totalExpenses-totalPurchases;
+  const creditBalance=sales.filter(s=>s.is_credit&&s.balance>0).reduce((s,x)=>s+(x.balance||0),0);
+
+  // Sales by method
+  const byMethod={};
+  fSales.forEach(s=>{ byMethod[s.payment_method]=(byMethod[s.payment_method]||0)+(s.total||0); });
+
+  // Expense breakdown
+  const byExpCat={};
+  fExpenses.forEach(e=>{ byExpCat[e.category]=(byExpCat[e.category]||0)+(e.amount||0); });
+
+  // Daily sales for chart
+  const dailySales={};
+  fSales.forEach(s=>{ const d=s.created_at?.split("T")[0]||""; dailySales[d]=(dailySales[d]||0)+(s.total||0); });
+  const dailyDates=Object.keys(dailySales).sort();
+
+  function exportCSV(){
+    const rows=[
+      ["CareHub Financial Report","","",""],
+      ["Business",brand.name,"Period",period==="month"?customMonth:period],
+      ["Generated",new Date().toLocaleDateString("en-NG"),"",""],
+      ["","","",""],
+      ["SUMMARY","","",""],
+      ["Total Revenue",totalRevenue,"",""],
+      ["Total Expenses",totalExpenses,"",""],
+      ["Total Purchases",totalPurchases,"",""],
+      ["Net Profit",netProfit,"",""],
+      ["Credit Outstanding",creditBalance,"",""],
+      ["","","",""],
+      ["SALES DETAIL","","",""],
+      ["Date","Transaction","Client","Amount","Payment Method"],
+      ...fSales.map(s=>[s.created_at?.split("T")[0]||"",s.txn_no||"",s.client_name||"Walk-in",s.total||0,s.payment_method||""]),
+      ["","","",""],
+      ["EXPENSES DETAIL","","",""],
+      ["Date","Category","Description","Amount"],
+      ...fExpenses.map(e=>[e.date||e.created_at?.split("T")[0]||"",e.category||"",e.description||"",e.amount||0]),
+    ];
+    const csv=rows.map(r=>r.map(c=>'"'+c+'"').join(",")).join("\n");
+    const blob=new Blob([csv],{type:"text/csv"});
+    const url=URL.createObjectURL(blob);
+    const a=document.createElement("a");
+    a.href=url;a.download="CareHub_Report_"+customMonth+".csv";a.click();
+    URL.revokeObjectURL(url);
+  }
+
+  return(
+    <div>
+      <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:"20px",flexWrap:"wrap",gap:"10px"}}>
+        <div><div style={{fontSize:"20px",fontWeight:"900",color:"#111"}}>Financial Reports</div><div style={{fontSize:"13px",color:"#888",marginTop:"3px"}}>Full breakdown of revenue, expenses and profit</div></div>
+        <button onClick={exportCSV} style={{padding:"9px 16px",borderRadius:"10px",border:"1px solid #059669",background:"white",color:"#059669",fontWeight:"700",fontSize:"13px",cursor:"pointer"}}>📥 Export to Excel</button>
+      </div>
+
+      <div style={{display:"flex",gap:"8px",marginBottom:"20px",flexWrap:"wrap",alignItems:"center"}}>
+        {["today","week","month","year","all"].map(p=><button key={p} onClick={()=>setPeriod(p)} style={{padding:"7px 14px",borderRadius:"10px",border:"none",cursor:"pointer",fontSize:"12px",fontWeight:"700",background:period===p?"#0f766e":"#f3f4f6",color:period===p?"white":"#666",textTransform:"capitalize"}}>{p==="all"?"All Time":p}</button>)}
+        {period==="month"&&<input type="month" value={customMonth} onChange={e=>setCustomMonth(e.target.value)} style={{padding:"7px 12px",borderRadius:"10px",border:"1px solid #e5e7eb",fontSize:"13px",outline:"none"}}/>}
+      </div>
+
+      {loading?<div style={{textAlign:"center",padding:"40px",color:"#aaa"}}>⏳ Loading...</div>:<>
+
+      {/* Summary cards */}
+      <div style={{display:"grid",gridTemplateColumns:"repeat(2,1fr)",gap:"14px",marginBottom:"20px"}}>
+        <Card style={{padding:"20px",borderLeft:"4px solid #059669"}}>
+          <div style={{fontSize:"12px",color:"#888",fontWeight:"600",marginBottom:"4px"}}>Total Revenue</div>
+          <div style={{fontSize:"28px",fontWeight:"900",color:"#059669"}}>{fmt(totalRevenue)}</div>
+          <div style={{fontSize:"12px",color:"#aaa",marginTop:"4px"}}>{fSales.length} transactions</div>
+        </Card>
+        <Card style={{padding:"20px",borderLeft:"4px solid #dc2626"}}>
+          <div style={{fontSize:"12px",color:"#888",fontWeight:"600",marginBottom:"4px"}}>Total Expenses</div>
+          <div style={{fontSize:"28px",fontWeight:"900",color:"#dc2626"}}>{fmt(totalExpenses+totalPurchases)}</div>
+          <div style={{fontSize:"12px",color:"#aaa",marginTop:"4px"}}>Expenses + Purchases</div>
+        </Card>
+        <Card style={{padding:"20px",borderLeft:"4px solid "+(netProfit>=0?"#0f766e":"#dc2626")}}>
+          <div style={{fontSize:"12px",color:"#888",fontWeight:"600",marginBottom:"4px"}}>Net Profit</div>
+          <div style={{fontSize:"28px",fontWeight:"900",color:netProfit>=0?"#0f766e":"#dc2626"}}>{fmt(netProfit)}</div>
+          <div style={{fontSize:"12px",color:"#aaa",marginTop:"4px"}}>{netProfit>=0?"Profitable":"Loss"}</div>
+        </Card>
+        <Card style={{padding:"20px",borderLeft:"4px solid #f59e0b"}}>
+          <div style={{fontSize:"12px",color:"#888",fontWeight:"600",marginBottom:"4px"}}>Credit Outstanding</div>
+          <div style={{fontSize:"28px",fontWeight:"900",color:"#d97706"}}>{fmt(creditBalance)}</div>
+          <div style={{fontSize:"12px",color:"#aaa",marginTop:"4px"}}>Unpaid credit sales</div>
+        </Card>
+      </div>
+
+      {/* Sales by payment method */}
+      {Object.keys(byMethod).length>0&&<Card style={{padding:"20px",marginBottom:"20px"}}>
+        <div style={{fontWeight:"800",fontSize:"15px",marginBottom:"14px"}}>Revenue by Payment Method</div>
+        {Object.entries(byMethod).sort((a,b)=>b[1]-a[1]).map(([method,amt])=>(
+          <div key={method} style={{display:"flex",alignItems:"center",gap:"12px",marginBottom:"10px"}}>
+            <span style={{fontSize:"12px",color:"#555",width:"80px",fontWeight:"600"}}>{method}</span>
+            <div style={{flex:1,height:"10px",background:"#f0f0f0",borderRadius:"5px",overflow:"hidden"}}>
+              <div style={{height:"100%",width:(totalRevenue>0?(amt/totalRevenue)*100:0)+"%",background:TEAL,borderRadius:"5px"}}/>
+            </div>
+            <span style={{fontSize:"13px",fontWeight:"700",width:"100px",textAlign:"right"}}>{fmt(amt)}</span>
+          </div>
+        ))}
+      </Card>}
+
+      {/* Expense breakdown */}
+      {Object.keys(byExpCat).length>0&&<Card style={{padding:"20px",marginBottom:"20px"}}>
+        <div style={{fontWeight:"800",fontSize:"15px",marginBottom:"14px"}}>Expense Breakdown</div>
+        {Object.entries(byExpCat).sort((a,b)=>b[1]-a[1]).map(([cat,amt])=>(
+          <div key={cat} style={{display:"flex",alignItems:"center",gap:"12px",marginBottom:"10px"}}>
+            <span style={{fontSize:"12px",color:"#555",width:"100px",fontWeight:"600"}}>{cat}</span>
+            <div style={{flex:1,height:"10px",background:"#f0f0f0",borderRadius:"5px",overflow:"hidden"}}>
+              <div style={{height:"100%",width:(totalExpenses>0?(amt/totalExpenses)*100:0)+"%",background:"#fca5a5",borderRadius:"5px"}}/>
+            </div>
+            <span style={{fontSize:"13px",fontWeight:"700",width:"100px",textAlign:"right"}}>{fmt(amt)}</span>
+          </div>
+        ))}
+      </Card>}
+
+      {/* Daily sales chart */}
+      {dailyDates.length>0&&<Card style={{padding:"20px",marginBottom:"20px"}}>
+        <div style={{fontWeight:"800",fontSize:"15px",marginBottom:"14px"}}>Daily Sales</div>
+        {dailyDates.slice(-14).map(date=>{
+          const amt=dailySales[date]||0;
+          const maxAmt=Math.max(...Object.values(dailySales));
+          return(
+            <div key={date} style={{display:"flex",alignItems:"center",gap:"12px",marginBottom:"8px"}}>
+              <span style={{fontSize:"11px",color:"#aaa",width:"80px"}}>{date.slice(5)}</span>
+              <div style={{flex:1,height:"8px",background:"#f0f0f0",borderRadius:"4px",overflow:"hidden"}}>
+                <div style={{height:"100%",width:(maxAmt>0?(amt/maxAmt)*100:0)+"%",background:TEAL,borderRadius:"4px"}}/>
+              </div>
+              <span style={{fontSize:"12px",fontWeight:"700",width:"90px",textAlign:"right"}}>{fmt(amt)}</span>
+            </div>
+          );
+        })}
+      </Card>}
+
+      {/* Recent transactions */}
+      <Card style={{marginBottom:"20px"}}>
+        <div style={{padding:"16px 20px",borderBottom:"1px solid #f5f5f5",fontWeight:"800",fontSize:"15px"}}>Recent Transactions</div>
+        {fSales.slice(0,10).map(s=>(
+          <div key={s.id} style={{display:"flex",alignItems:"center",justifyContent:"space-between",padding:"10px 20px",borderBottom:"1px solid #f9f9f9"}}>
+            <div>
+              <div style={{fontSize:"13px",fontWeight:"700"}}>{s.client_name||"Walk-in"}</div>
+              <div style={{fontSize:"11px",color:"#aaa"}}>{s.txn_no} · {s.created_at?.split("T")[0]} · {s.payment_method}</div>
+            </div>
+            <div style={{textAlign:"right"}}>
+              <div style={{fontSize:"14px",fontWeight:"900",color:TEALC}}>{fmt(s.total||0)}</div>
+              {s.is_credit&&<Pill label="Credit" type="amber"/>}
+            </div>
+          </div>
+        ))}
+        {fSales.length===0&&<div style={{textAlign:"center",padding:"32px",color:"#ccc",fontSize:"13px"}}>No transactions in this period</div>}
+      </Card>
+      </>}
+    </div>
+  );
+}
+
+
 function InventoryPage({ products, setProducts, brand }) {
-  const [showAdd,setShowAdd]=useState(false);const [showRestock,setShowRestock]=useState(null);const [editProd,setEditProd]=useState(null);const [search,setSearch]=useState("");const [catFilter,setCatFilter]=useState("All");const [toast,setToast]=useState("");
+  const [showAdd,setShowAdd]=useState(false);
+  const [showRestock,setShowRestock]=useState(null);
+  const [editProd,setEditProd]=useState(null);
+  const [search,setSearch]=useState("");
+  const [catFilter,setCatFilter]=useState("All");
+  const [toast,setToast]=useState("");
+  const [showUpload,setShowUpload]=useState(false);
+  const [uploadData,setUploadData]=useState([]);
+  const [uploadError,setUploadError]=useState("");
+  const [scanning,setScanning]=useState(false);
   const showToast=msg=>{setToast(msg);setTimeout(()=>setToast(""),3000);};
   const cats=["All",...Array.from(new Set(products.map(p=>p.cat)))];
   const filtered=products.filter(p=>(catFilter==="All"||p.cat===catFilter)&&(p.name.toLowerCase().includes(search.toLowerCase())||(p.genericName||"").toLowerCase().includes(search.toLowerCase())));
@@ -802,9 +1614,113 @@ function InventoryPage({ products, setProducts, brand }) {
   const outOfStock=products.filter(p=>p.cat!=="Services"&&p.stock<=0);
   const listedOnCareFind=products.filter(p=>p.listOnCareFind&&p.stock>0).length;
 
+  function downloadTemplate() {
+    const rows = [
+      ["Product Name","Generic Name","Category","Price (NGN)","Stock Quantity","List on CareFind (yes/no)"],
+      ["Amoxicillin 500mg","Amoxicillin","Medicines","1500","100","yes"],
+      ["Paracetamol 500mg","Paracetamol","Medicines","800","200","yes"],
+      ["Vitamin C Serum","Ascorbic Acid Serum","Skincare","8500","20","yes"],
+      ["Consultation Fee","Medical Consultation","Services","5000","","yes"],
+    ];
+    const csv = rows.map(r=>r.map(c=>'"'+c+'"').join(",")).join("\n");
+    const blob = new Blob([csv],{type:"text/csv"});
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href=url; a.download="CareHub_Inventory_Template.csv"; a.click();
+    URL.revokeObjectURL(url);
+    showToast("Template downloaded! Fill in Excel, save as CSV, then upload here.");
+  }
+
+  function handleFileUpload(e) {
+    const file = e.target.files[0];
+    if(!file) return;
+    setUploadError(""); setUploadData([]);
+    const reader = new FileReader();
+    reader.onload = (ev) => {
+      try {
+        const text = ev.target.result;
+        const lines = text.split("\n").filter(l=>l.trim());
+        if(lines.length < 2){ setUploadError("File is empty or has no products."); return; }
+        const rows = lines.slice(1);
+        const parsed = [];
+        rows.forEach(line => {
+          const cols = line.split(/,(?=(?:[^"]*"[^"]*")*[^"]*$)/).map(c=>c.replace(/^"|"$/g,"").trim());
+          if(!cols[0]) return;
+          parsed.push({
+            id: Math.random(),
+            name: cols[0]||"",
+            genericName: cols[1]||"",
+            cat: cols[2]||"Medicines",
+            price: parseFloat(cols[3])||0,
+            stock: cols[4]!==""?parseInt(cols[4])||0:999,
+            emoji: "💊",
+            listOnCareFind: (cols[5]||"yes").toLowerCase()!=="no",
+          });
+        });
+        if(parsed.length===0){ setUploadError("No valid products found. Check your file format."); return; }
+        setUploadData(parsed);
+      } catch(err) { setUploadError("Error reading file. Please use the downloaded template."); }
+    };
+    reader.readAsText(file);
+    e.target.value="";
+  }
+
+  function confirmUpload() {
+    if(uploadData.length===0) return;
+    setProducts(prev=>[...prev,...uploadData]);
+    showToast(uploadData.length+" products added successfully!");
+    setUploadData([]); setShowUpload(false);
+  }
+
+  function startScanner() {
+    setScanning(true);
+    if("BarcodeDetector" in window) {
+      navigator.mediaDevices.getUserMedia({video:{facingMode:"environment"}}).then(stream=>{
+        const video = document.getElementById("inv-scanner-video");
+        if(video){ video.srcObject=stream; video.play(); }
+        const detector = new window.BarcodeDetector({formats:["ean_13","ean_8","code_128","code_39","upc_a","upc_e","qr_code"]});
+        let found=false;
+        const interval = setInterval(async()=>{
+          if(found||!video) return;
+          try {
+            const codes = await detector.detect(video);
+            if(codes.length>0){
+              found=true; clearInterval(interval);
+              const code = codes[0].rawValue;
+              stream.getTracks().forEach(t=>t.stop());
+              setScanning(false);
+              setSearch(code);
+              const match = products.find(p=>p.barcode===code||p.name.toLowerCase().includes(code.toLowerCase()));
+              showToast(match?"Product found: "+match.name:"Barcode scanned: "+code);
+            }
+          } catch(e){}
+        },300);
+        setTimeout(()=>{ if(!found){ clearInterval(interval); stream.getTracks().forEach(t=>t.stop()); setScanning(false); showToast("No barcode detected. Try again."); }},15000);
+      }).catch(()=>{ setScanning(false); showToast("Camera access denied. Please allow camera permission."); });
+    } else {
+      setScanning(false);
+      const code = prompt("Barcode scanner not supported. Enter barcode manually:");
+      if(code){ setSearch(code); showToast("Searching: "+code); }
+    }
+  }
+
+  function stopScanner() {
+    setScanning(false);
+    const video = document.getElementById("inv-scanner-video");
+    if(video&&video.srcObject){ video.srcObject.getTracks().forEach(t=>t.stop()); video.srcObject=null; }
+  }
+
   return(
     <div>
-      <SectionHead title="Inventory" sub="Manage products, stock and CareFind listings" btn="+ Add Product" onBtn={()=>setShowAdd(true)}/>
+      <div style={{display:"flex",alignItems:"flex-start",justifyContent:"space-between",marginBottom:"20px",flexWrap:"wrap",gap:"10px"}}>
+        <div><div style={{fontSize:"20px",fontWeight:"900",color:"#111"}}>Inventory</div><div style={{fontSize:"13px",color:"#888",marginTop:"3px"}}>Manage products, stock and CareFind listings</div></div>
+        <div style={{display:"flex",gap:"8px",flexWrap:"wrap"}}>
+          <button onClick={downloadTemplate} style={{padding:"9px 14px",borderRadius:"10px",border:"1px solid #e5e7eb",background:"white",color:"#059669",fontWeight:"700",fontSize:"12px",cursor:"pointer"}}>📥 Download Template</button>
+          <button onClick={()=>setShowUpload(true)} style={{padding:"9px 14px",borderRadius:"10px",border:"1px solid #e5e7eb",background:"white",color:"#2563eb",fontWeight:"700",fontSize:"12px",cursor:"pointer"}}>📤 Upload Excel/CSV</button>
+          <TealBtn onClick={()=>setShowAdd(true)}>+ Add Product</TealBtn>
+        </div>
+      </div>
+
       <div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:"14px",marginBottom:"20px"}}>
         <StatCard icon="📦" label="Total Products" value={products.length}/>
         <StatCard icon="⚠️" label="Low Stock" value={lowStock.length} alert={lowStock.length>0} sub={outOfStock.length+" out of stock"}/>
@@ -812,15 +1728,11 @@ function InventoryPage({ products, setProducts, brand }) {
         <StatCard icon="🔍" label="On CareFind" value={listedOnCareFind} sub="Products visible to public"/>
       </div>
 
-      {/* CareFind status banner */}
       {brand&&(brand.visible_on_carefind||brand.visibleOnCareFind)&&(
         <div style={{marginBottom:"20px",padding:"14px 18px",borderRadius:"14px",background:"#f0fdfa",border:"1px solid #ccfbf1",display:"flex",alignItems:"center",justifyContent:"space-between",gap:"12px",flexWrap:"wrap"}}>
           <div style={{display:"flex",alignItems:"center",gap:"12px"}}>
             <span style={{fontSize:"20px"}}>🔍</span>
-            <div>
-              <div style={{fontWeight:"700",color:TEALC,fontSize:"14px"}}>Your business is listed on CareFind</div>
-              <div style={{fontSize:"12px",color:"#555",marginTop:"2px"}}>{listedOnCareFind} product{listedOnCareFind!==1?"s":""} visible to public · WhatsApp: {brand.whatsapp||"Not set"}</div>
-            </div>
+            <div><div style={{fontWeight:"700",color:TEALC,fontSize:"14px"}}>Your business is listed on CareFind</div><div style={{fontSize:"12px",color:"#555",marginTop:"2px"}}>{listedOnCareFind} product{listedOnCareFind!==1?"s":""} visible · WhatsApp: {brand.whatsapp||"Not set"}</div></div>
           </div>
           <Pill label="Live on CareFind" type="teal"/>
         </div>
@@ -834,8 +1746,22 @@ function InventoryPage({ products, setProducts, brand }) {
       <div style={{display:"flex",gap:"10px",marginBottom:"16px",flexWrap:"wrap"}}>
         <input value={search} onChange={e=>setSearch(e.target.value)} placeholder="Search product name or generic name..."
           style={{flex:1,minWidth:"200px",padding:"9px 14px",borderRadius:"12px",border:"1px solid #e5e7eb",fontSize:"13px",outline:"none",background:"white"}}/>
+        <button onClick={startScanner} style={{padding:"9px 16px",borderRadius:"12px",border:"1px solid #e5e7eb",background:"white",color:"#0f172a",fontWeight:"700",fontSize:"13px",cursor:"pointer"}}>📷 Scan</button>
         <div style={{display:"flex",gap:"6px",flexWrap:"wrap"}}>{cats.map(c=><button key={c} onClick={()=>setCatFilter(c)} style={{padding:"8px 14px",borderRadius:"10px",border:"none",cursor:"pointer",fontSize:"12px",fontWeight:"700",background:catFilter===c?"#0f766e":"#f3f4f6",color:catFilter===c?"white":"#666"}}>{c}</button>)}</div>
       </div>
+
+      {scanning&&(
+        <div style={{marginBottom:"16px",borderRadius:"16px",overflow:"hidden",border:"2px solid #0f766e",position:"relative",background:"black"}}>
+          <video id="inv-scanner-video" style={{width:"100%",maxHeight:"260px",objectFit:"cover",display:"block"}} autoPlay playsInline muted/>
+          <div style={{position:"absolute",top:0,left:0,right:0,bottom:0,display:"flex",alignItems:"center",justifyContent:"center",pointerEvents:"none"}}>
+            <div style={{width:"200px",height:"100px",border:"2px solid #14b8a6",borderRadius:"8px",boxShadow:"0 0 0 9999px rgba(0,0,0,0.5)"}}/>
+          </div>
+          <div style={{position:"absolute",bottom:0,left:0,right:0,padding:"12px",background:"rgba(0,0,0,0.7)",display:"flex",alignItems:"center",justifyContent:"space-between"}}>
+            <span style={{color:"white",fontSize:"13px",fontWeight:"600"}}>📷 Point camera at barcode...</span>
+            <button onClick={stopScanner} style={{padding:"6px 14px",borderRadius:"8px",border:"none",background:"#ef4444",color:"white",fontWeight:"700",fontSize:"12px",cursor:"pointer"}}>Stop</button>
+          </div>
+        </div>
+      )}
 
       <Card>
         <div style={{overflowX:"auto"}}>
@@ -843,30 +1769,60 @@ function InventoryPage({ products, setProducts, brand }) {
             <thead><tr style={{borderBottom:"1px solid #f5f5f5",background:"#fafafa"}}>{["Product","Generic Name","Category","Price","Stock","CareFind","Status","Actions"].map(h=><th key={h} style={{padding:"12px 16px",textAlign:"left",fontSize:"11px",fontWeight:"700",color:"#aaa",textTransform:"uppercase",whiteSpace:"nowrap"}}>{h}</th>)}</tr></thead>
             <tbody>{filtered.map(p=>{
               const low=p.cat!=="Services"&&p.stock>0&&p.stock<=5;const out=p.cat!=="Services"&&p.stock<=0;
-              return(
-                <tr key={p.id} style={{borderBottom:"1px solid #f9f9f9",background:out?"#fff5f5":low?"#fffbeb":"white"}}>
-                  <td style={{padding:"12px 16px"}}><div style={{display:"flex",alignItems:"center",gap:"8px"}}><span style={{fontSize:"20px"}}>{p.emoji}</span><span style={{fontWeight:"700",fontSize:"13px"}}>{p.name}</span></div></td>
-                  <td style={{padding:"12px 16px",fontSize:"12px",color:"#888"}}>{p.genericName||"--"}</td>
-                  <td style={{padding:"12px 16px"}}><Pill label={p.cat} type="teal"/></td>
-                  <td style={{padding:"12px 16px",fontSize:"13px",fontWeight:"700"}}>{fmt(p.price)}</td>
-                  <td style={{padding:"12px 16px",fontSize:"14px",fontWeight:"900",color:out?"#ef4444":low?"#f59e0b":"#111"}}>{p.cat==="Services"?"∞":p.stock}</td>
-                  <td style={{padding:"12px 16px"}}>
-                    <button onClick={()=>setProducts(prev=>prev.map(x=>x.id===p.id?{...x,listOnCareFind:!x.listOnCareFind}:x))}
-                      style={{width:"36px",height:"20px",borderRadius:"10px",border:"none",cursor:"pointer",position:"relative",background:p.listOnCareFind?"#0f766e":"#e5e7eb",flexShrink:0}}>
-                      <div style={{position:"absolute",top:"2px",left:p.listOnCareFind?"18px":"2px",width:"16px",height:"16px",borderRadius:"50%",background:"white",transition:"left 0.2s"}}/>
-                    </button>
-                  </td>
-                  <td style={{padding:"12px 16px"}}>{p.cat==="Services"?<Pill label="Service" type="blue"/>:out?<Pill label="Out of Stock" type="red"/>:low?<Pill label="Low Stock" type="amber"/>:<Pill label="In Stock" type="green"/>}</td>
-                  <td style={{padding:"12px 16px"}}><div style={{display:"flex",gap:"6px",flexWrap:"wrap"}}>
-                    {p.cat!=="Services"&&<button onClick={()=>setShowRestock(p)} style={{padding:"5px 10px",borderRadius:"8px",border:"none",background:"#059669",color:"white",fontWeight:"700",fontSize:"11px",cursor:"pointer"}}>+Restock</button>}
-                    <GhostBtn onClick={()=>setEditProd(p)}>Edit</GhostBtn>
-                  </div></td>
-                </tr>
-              );
+              return(<tr key={p.id} style={{borderBottom:"1px solid #f9f9f9",background:out?"#fff5f5":low?"#fffbeb":"white"}}>
+                <td style={{padding:"12px 16px"}}><div style={{display:"flex",alignItems:"center",gap:"8px"}}><span style={{fontSize:"20px"}}>{p.emoji}</span><span style={{fontWeight:"700",fontSize:"13px"}}>{p.name}</span></div></td>
+                <td style={{padding:"12px 16px",fontSize:"12px",color:"#888"}}>{p.genericName||"--"}</td>
+                <td style={{padding:"12px 16px"}}><Pill label={p.cat} type="teal"/></td>
+                <td style={{padding:"12px 16px",fontSize:"13px",fontWeight:"700"}}>{fmt(p.price)}</td>
+                <td style={{padding:"12px 16px",fontSize:"14px",fontWeight:"900",color:out?"#ef4444":low?"#f59e0b":"#111"}}>{p.cat==="Services"?"inf":p.stock}</td>
+                <td style={{padding:"12px 16px"}}>
+                  <button onClick={()=>setProducts(prev=>prev.map(x=>x.id===p.id?{...x,listOnCareFind:!x.listOnCareFind}:x))}
+                    style={{width:"36px",height:"20px",borderRadius:"10px",border:"none",cursor:"pointer",position:"relative",background:p.listOnCareFind?"#0f766e":"#e5e7eb"}}>
+                    <div style={{position:"absolute",top:"2px",left:p.listOnCareFind?"18px":"2px",width:"16px",height:"16px",borderRadius:"50%",background:"white",transition:"left 0.2s"}}/>
+                  </button>
+                </td>
+                <td style={{padding:"12px 16px"}}>{p.cat==="Services"?<Pill label="Service" type="blue"/>:out?<Pill label="Out of Stock" type="red"/>:low?<Pill label="Low Stock" type="amber"/>:<Pill label="In Stock" type="green"/>}</td>
+                <td style={{padding:"12px 16px"}}><div style={{display:"flex",gap:"6px",flexWrap:"wrap"}}>
+                  {p.cat!=="Services"&&<button onClick={()=>setShowRestock(p)} style={{padding:"5px 10px",borderRadius:"8px",border:"none",background:"#059669",color:"white",fontWeight:"700",fontSize:"11px",cursor:"pointer"}}>+Stock</button>}
+                  <GhostBtn onClick={()=>setEditProd(p)}>Edit</GhostBtn>
+                </div></td>
+              </tr>);
             })}</tbody>
           </table>
         </div>
       </Card>
+
+      <Modal show={showUpload} onClose={()=>{setShowUpload(false);setUploadData([]);setUploadError("");}} title="Upload Products from Excel or CSV">
+        <div style={{display:"flex",flexDirection:"column",gap:"16px"}}>
+          <div style={{padding:"14px",borderRadius:"12px",background:"#f0fdfa",border:"1px solid #ccfbf1"}}>
+            <div style={{fontWeight:"700",color:TEALC,fontSize:"13px",marginBottom:"8px"}}>How to upload:</div>
+            <div style={{fontSize:"13px",color:"#555",lineHeight:"1.9"}}>
+              1. Tap <strong>Download Template</strong> below<br/>
+              2. Open in <strong>Microsoft Excel</strong> or Google Sheets<br/>
+              3. Fill in all your products row by row<br/>
+              4. Save as <strong>CSV (Comma delimited)</strong><br/>
+              5. Come back and select your saved file
+            </div>
+          </div>
+          <label style={{display:"block",padding:"24px",borderRadius:"12px",border:"2px dashed #e5e7eb",textAlign:"center",cursor:"pointer",background:"#fafafa"}}>
+            <div style={{fontSize:"36px",marginBottom:"8px"}}>📁</div>
+            <div style={{fontWeight:"700",color:"#555",fontSize:"14px"}}>Tap to select your CSV file</div>
+            <div style={{fontSize:"12px",color:"#aaa",marginTop:"4px"}}>Supports .csv files saved from Excel</div>
+            <input type="file" accept=".csv,.xlsx,.xls,.txt" onChange={handleFileUpload} style={{display:"none"}}/>
+          </label>
+          {uploadError&&<div style={{padding:"12px",borderRadius:"10px",background:"#fef2f2",border:"1px solid #fecaca",fontSize:"13px",color:"#dc2626"}}>⚠️ {uploadError}</div>}
+          {uploadData.length>0&&<div>
+            <div style={{fontWeight:"700",color:"#059669",fontSize:"13px",marginBottom:"10px"}}>✅ {uploadData.length} products ready to import:</div>
+            <div style={{maxHeight:"200px",overflowY:"auto",borderRadius:"10px",border:"1px solid #f0f0f0"}}>
+              {uploadData.map((p,i)=><div key={i} style={{display:"flex",justifyContent:"space-between",padding:"8px 12px",borderBottom:"1px solid #f9f9f9",fontSize:"13px"}}><span style={{fontWeight:"600"}}>{p.name}</span><span style={{color:"#888"}}>{p.cat} · {fmt(p.price)} · {p.stock} units</span></div>)}
+            </div>
+          </div>}
+          <div style={{display:"flex",gap:"10px"}}>
+            <GhostBtn onClick={downloadTemplate} style={{flex:1,padding:"12px"}}>📥 Download Template</GhostBtn>
+            {uploadData.length>0&&<TealBtn onClick={confirmUpload} style={{flex:1,padding:"12px"}}>Import {uploadData.length} Products</TealBtn>}
+          </div>
+        </div>
+      </Modal>
 
       {showAdd&&<AddProductModal onClose={()=>setShowAdd(false)} products={products} setProducts={setProducts} showToast={showToast} brandName={brand&&brand.name}/>}
       {editProd&&<AddProductModal existing={editProd} onClose={()=>setEditProd(null)} products={products} setProducts={setProducts} showToast={showToast} brandName={brand&&brand.name}/>}
@@ -954,20 +1910,80 @@ function PublicProfilePage({ brand, products }) {
 }
 
 // POS
-function InlinePOS({ products, setProducts }) {
+function InlinePOS({ products, setProducts, brand }) {
   const [cart,setCart]=useState([]);const [client,setClient]=useState("Walk-in");const [method,setMethod]=useState("Cash");const [cash,setCash]=useState("");const [disc,setDisc]=useState("");const [discPct,setDiscPct]=useState(false);const [filter,setFilter]=useState("All");const [search,setSearch]=useState("");const [receipt,setReceipt]=useState(null);
+  const [scanningPOS,setScanningPOS]=useState(false);
   const cats=["All",...Array.from(new Set(products.map(p=>p.cat)))];
   const visible=products.filter(p=>(filter==="All"||p.cat===filter)&&(p.name.toLowerCase().includes(search.toLowerCase())||(p.genericName||"").toLowerCase().includes(search.toLowerCase())));
   function add(p){const f=cart.find(c=>c.id===p.id);if(f)setCart(cart.map(c=>c.id===p.id?{...c,qty:c.qty+1}:c));else setCart([...cart,{...p,qty:1}]);}
   function rmv(id){setCart(cart.filter(c=>c.id!==id));}
   function qty(id,v){const n=parseInt(v)||0;if(n<=0)rmv(id);else setCart(cart.map(c=>c.id===id?{...c,qty:n}:c));}
   const sub=cart.reduce((s,c)=>s+c.price*c.qty,0);const discAmt=disc?(discPct?Math.round(sub*parseFloat(disc)/100):parseFloat(disc)||0):0;const total=Math.max(0,sub-discAmt);const change=method==="Cash"&&cash?parseFloat(cash)-total:0;
-  function charge(){
+
+  function startPOSScan() {
+    setScanningPOS(true);
+    if("BarcodeDetector" in window) {
+      navigator.mediaDevices.getUserMedia({video:{facingMode:"environment"}}).then(stream=>{
+        const video = document.getElementById("pos-scanner-video");
+        if(video){ video.srcObject=stream; video.play(); }
+        const detector = new window.BarcodeDetector({formats:["ean_13","ean_8","code_128","code_39","upc_a","upc_e","qr_code"]});
+        let found=false;
+        const interval=setInterval(async()=>{
+          if(found||!video) return;
+          try {
+            const codes = await detector.detect(video);
+            if(codes.length>0){
+              found=true; clearInterval(interval);
+              const code=codes[0].rawValue;
+              stream.getTracks().forEach(t=>t.stop());
+              setScanningPOS(false);
+              const match=products.find(p=>p.barcode===code||p.name.toLowerCase().includes(code.toLowerCase()));
+              if(match){ add(match); }
+              else { setSearch(code); }
+            }
+          } catch(e){}
+        },300);
+        setTimeout(()=>{ if(!found){ clearInterval(interval); stream.getTracks().forEach(t=>t.stop()); setScanningPOS(false); }},15000);
+      }).catch(()=>{ setScanningPOS(false); });
+    } else {
+      setScanningPOS(false);
+      const code=prompt("Enter barcode number:");
+      if(code){ const match=products.find(p=>p.name.toLowerCase().includes(code.toLowerCase())); if(match) add(match); else setSearch(code); }
+    }
+  }
+
+  function stopPOSScan() {
+    setScanningPOS(false);
+    const video=document.getElementById("pos-scanner-video");
+    if(video&&video.srcObject){ video.srcObject.getTracks().forEach(t=>t.stop()); video.srcObject=null; }
+  }
+
+  async function charge(){
     if(!cart.length)return;
-    const id="TXN"+Math.floor(Math.random()*90000+10000);
-    setReceipt({id,client:client||"Walk-in",items:[...cart],subtotal:sub,disc:discAmt,total,method,cashGiven:parseFloat(cash)||0});
-    // deduct stock and update CareFind availability automatically
+    const txnNo="TXN"+Math.floor(Math.random()*90000+10000);
+    const saleData={
+      txn_no:txnNo,
+      client_name:client||"Walk-in",
+      items:JSON.stringify(cart),
+      subtotal:sub,
+      discount:discAmt,
+      total:total,
+      payment_method:method,
+      amount_paid:method==="Cash"?parseFloat(cash)||total:total,
+      balance:0,
+      is_credit:false,
+      is_on_hold:false,
+    };
+    setReceipt({id:txnNo,client:client||"Walk-in",items:[...cart],subtotal:sub,disc:discAmt,total,method,cashGiven:parseFloat(cash)||0});
     setProducts(prev=>prev.map(p=>{const s=cart.find(c=>c.id===p.id);return s&&p.cat!=="Services"?{...p,stock:Math.max(0,p.stock-s.qty)}:p;}));
+    // Save to database or queue for offline
+    if(brand&&brand.id){
+      if(isOnline()){
+        try{ await dbAddSale({...saleData,business_id:brand.id}); }catch(e){ savePendingSale({...saleData,business_id:brand.id}); }
+      } else {
+        savePendingSale({...saleData,business_id:brand.id});
+      }
+    }
   }
   function newSale(){setReceipt(null);setCart([]);setClient("Walk-in");setDisc("");setCash("");setMethod("Cash");}
   const printR=()=>{if(!receipt)return;const w=window.open("","_blank","width=380,height=650");w.document.write(`<html><head><title>Receipt</title><style>*{margin:0;padding:0;box-sizing:border-box;font-family:'Courier New',monospace}body{padding:24px;max-width:320px;margin:auto}.c{text-align:center}.b{font-weight:bold}hr{border:none;border-top:1px dashed #aaa;margin:10px 0}.r{display:flex;justify-content:space-between;margin:4px 0;font-size:12px}</style></head><body><div class="c"><div class="b" style="font-size:15px">CareHub</div><div style="font-size:11px;color:#666;margin-top:4px">${nowStr()}</div></div><hr><div class="r"><span>Receipt:</span><span>${receipt.id}</span></div><div class="r"><span>Client:</span><span>${receipt.client}</span></div><hr>${receipt.items.map(i=>`<div style="margin-bottom:8px"><div class="b" style="font-size:12px">${i.emoji} ${i.name}</div><div class="r" style="color:#666"><span>${i.qty} x ${fmt(i.price)}</span><span>${fmt(i.price*i.qty)}</span></div></div>`).join("")}<hr><div class="r"><span>Subtotal</span><span>${fmt(receipt.subtotal)}</span></div>${receipt.disc>0?`<div class="r" style="color:green"><span>Discount</span><span>-${fmt(receipt.disc)}</span></div>`:""}<div class="r b" style="font-size:15px"><span>TOTAL</span><span>${fmt(receipt.total)}</span></div><div class="r"><span>Payment</span><span>${receipt.method}</span></div><hr><div class="c" style="font-size:11px;color:#999">Thank you! ✨</div></body></html>`);w.document.close();setTimeout(()=>{w.focus();w.print();},300);};
@@ -976,9 +1992,22 @@ function InlinePOS({ products, setProducts }) {
     <div style={{display:"flex",height:"100%",overflow:"hidden"}}>
       <div style={{flex:1,display:"flex",flexDirection:"column",overflow:"hidden"}}>
         <div style={{padding:"12px 16px",background:"white",borderBottom:"1px solid #f0f0f0",display:"flex",gap:"10px",flexWrap:"wrap"}}>
-          <input value={search} onChange={e=>setSearch(e.target.value)} placeholder="Search products or generic name..." style={{flex:1,minWidth:"140px",padding:"8px 14px",borderRadius:"10px",border:"1px solid #e5e7eb",fontSize:"13px",outline:"none"}}/>
+          <input value={search} onChange={e=>setSearch(e.target.value)} placeholder="Search or scan barcode..." style={{flex:1,minWidth:"140px",padding:"8px 14px",borderRadius:"10px",border:"1px solid #e5e7eb",fontSize:"13px",outline:"none"}}/>
+          <button onClick={startPOSScan} style={{padding:"8px 14px",borderRadius:"10px",border:"1px solid #e5e7eb",background:"white",color:"#0f172a",fontWeight:"700",fontSize:"13px",cursor:"pointer",whiteSpace:"nowrap"}}>📷 Scan</button>
           <div style={{display:"flex",gap:"6px",flexWrap:"wrap"}}>{cats.map(c=><button key={c} onClick={()=>setFilter(c)} style={{padding:"7px 13px",borderRadius:"10px",border:"none",cursor:"pointer",fontWeight:"700",fontSize:"12px",background:filter===c?"#0f766e":"#f0f0f0",color:filter===c?"white":"#666"}}>{c}</button>)}</div>
         </div>
+        {scanningPOS&&(
+          <div style={{margin:"0 14px 14px",borderRadius:"14px",overflow:"hidden",border:"2px solid #0f766e",position:"relative",background:"black"}}>
+            <video id="pos-scanner-video" style={{width:"100%",maxHeight:"200px",objectFit:"cover",display:"block"}} autoPlay playsInline muted/>
+            <div style={{position:"absolute",top:0,left:0,right:0,bottom:0,display:"flex",alignItems:"center",justifyContent:"center",pointerEvents:"none"}}>
+              <div style={{width:"180px",height:"80px",border:"2px solid #14b8a6",borderRadius:"8px",boxShadow:"0 0 0 9999px rgba(0,0,0,0.5)"}}/>
+            </div>
+            <div style={{position:"absolute",bottom:0,left:0,right:0,padding:"8px 12px",background:"rgba(0,0,0,0.7)",display:"flex",alignItems:"center",justifyContent:"space-between"}}>
+              <span style={{color:"white",fontSize:"12px",fontWeight:"600"}}>📷 Scan barcode to add to cart</span>
+              <button onClick={stopPOSScan} style={{padding:"5px 12px",borderRadius:"8px",border:"none",background:"#ef4444",color:"white",fontWeight:"700",fontSize:"12px",cursor:"pointer"}}>Stop</button>
+            </div>
+          </div>
+        )}
         <div style={{flex:1,overflowY:"auto",padding:"14px",display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(140px,1fr))",gap:"10px",alignContent:"start"}}>
           {visible.map(p=>{const inCart=cart.find(c=>c.id===p.id);const cQty=inCart?inCart.qty:0;const out=p.cat!=="Services"&&p.stock<=0;return(
             <button key={p.id} onClick={()=>!out&&add(p)} disabled={out} style={{background:"white",border:cQty>0?"2px solid #0f766e":"2px solid transparent",borderRadius:"16px",padding:"14px",cursor:out?"not-allowed":"pointer",opacity:out?0.4:1,textAlign:"left",position:"relative",boxShadow:cQty>0?"0 4px 12px rgba(15,118,110,0.15)":"0 2px 6px rgba(0,0,0,0.06)",width:"100%",display:"block",outline:"none"}}>
@@ -1057,7 +2086,367 @@ async function dbSaveFollowUp(data) {
   return sbFetch("follow_ups", { method:"POST", body:JSON.stringify(data) });
 }
 
+// ══════════════════════════════════════════════════════════════════════════════
+// DATABASE HELPERS — All tables
+// ══════════════════════════════════════════════════════════════════════════════
+
+// STAFF
+async function dbGetStaff(businessId) { return sbFetch("staff?business_id=eq."+businessId+"&order=created_at.desc&select=*"); }
+async function dbAddStaff(data) { return sbFetch("staff",{method:"POST",body:JSON.stringify(data)}); }
+async function dbUpdateStaff(id,data) { return sbFetch("staff?id=eq."+id,{method:"PATCH",body:JSON.stringify(data),prefer:"return=minimal"}); }
+async function dbDeleteStaff(id) { return sbFetch("staff?id=eq."+id,{method:"DELETE",prefer:"return=minimal"}); }
+async function dbLoginStaff(email,password) { const r=await sbFetch("staff?email=eq."+encodeURIComponent(email)+"&password=eq."+encodeURIComponent(password)+"&select=*"); return r[0]||null; }
+
+// CLIENTS
+async function dbGetClients(businessId) { return sbFetch("clients?business_id=eq."+businessId+"&order=created_at.desc&select=*"); }
+async function dbAddClient(data) { return sbFetch("clients",{method:"POST",body:JSON.stringify(data)}); }
+async function dbUpdateClient(id,data) { return sbFetch("clients?id=eq."+id,{method:"PATCH",body:JSON.stringify(data),prefer:"return=minimal"}); }
+async function dbSearchClients(businessId,q) { return sbFetch("clients?business_id=eq."+businessId+"&full_name=ilike.*"+encodeURIComponent(q)+"*&select=*"); }
+
+// PRODUCTS
+async function dbGetProducts(businessId) { return sbFetch("products?business_id=eq."+businessId+"&order=name.asc&select=*"); }
+async function dbAddProduct(data) { return sbFetch("products",{method:"POST",body:JSON.stringify(data)}); }
+async function dbUpdateProduct(id,data) { return sbFetch("products?id=eq."+id,{method:"PATCH",body:JSON.stringify(data),prefer:"return=minimal"}); }
+async function dbDeleteProduct(id) { return sbFetch("products?id=eq."+id,{method:"DELETE",prefer:"return=minimal"}); }
+
+// SALES
+async function dbGetSales(businessId) { return sbFetch("sales?business_id=eq."+businessId+"&order=created_at.desc&select=*"); }
+async function dbGetSalesToday(businessId) {
+  const today = new Date().toISOString().split("T")[0];
+  return sbFetch("sales?business_id=eq."+businessId+"&created_at=gte."+today+"T00:00:00&order=created_at.desc&select=*");
+}
+async function dbAddSale(data) { return sbFetch("sales",{method:"POST",body:JSON.stringify(data)}); }
+async function dbUpdateSale(id,data) { return sbFetch("sales?id=eq."+id,{method:"PATCH",body:JSON.stringify(data),prefer:"return=minimal"}); }
+async function dbGetHeldSales(businessId) { return sbFetch("sales?business_id=eq."+businessId+"&is_on_hold=eq.true&select=*"); }
+async function dbGetCreditSales(businessId) { return sbFetch("sales?business_id=eq."+businessId+"&is_credit=eq.true&balance=gt.0&select=*"); }
+
+// EXPENSES
+async function dbGetExpenses(businessId) { return sbFetch("expenses?business_id=eq."+businessId+"&order=created_at.desc&select=*"); }
+async function dbAddExpense(data) { return sbFetch("expenses",{method:"POST",body:JSON.stringify(data)}); }
+async function dbDeleteExpense(id) { return sbFetch("expenses?id=eq."+id,{method:"DELETE",prefer:"return=minimal"}); }
+
+// APPOINTMENTS
+async function dbGetAppointments(businessId) { return sbFetch("appointments?business_id=eq."+businessId+"&order=date.asc&select=*"); }
+async function dbAddAppointment(data) { return sbFetch("appointments",{method:"POST",body:JSON.stringify(data)}); }
+async function dbUpdateAppointment(id,data) { return sbFetch("appointments?id=eq."+id,{method:"PATCH",body:JSON.stringify(data),prefer:"return=minimal"}); }
+async function dbDeleteAppointment(id) { return sbFetch("appointments?id=eq."+id,{method:"DELETE",prefer:"return=minimal"}); }
+
+// DEBTS
+async function dbGetDebts(businessId) { return sbFetch("debts?business_id=eq."+businessId+"&order=created_at.desc&select=*"); }
+async function dbAddDebt(data) { return sbFetch("debts",{method:"POST",body:JSON.stringify(data)}); }
+async function dbUpdateDebt(id,data) { return sbFetch("debts?id=eq."+id,{method:"PATCH",body:JSON.stringify(data),prefer:"return=minimal"}); }
+
+// PURCHASES
+async function dbGetPurchases(businessId) { return sbFetch("purchases?business_id=eq."+businessId+"&order=created_at.desc&select=*"); }
+async function dbAddPurchase(data) { return sbFetch("purchases",{method:"POST",body:JSON.stringify(data)}); }
+async function dbUpdatePurchase(id,data) { return sbFetch("purchases?id=eq."+id,{method:"PATCH",body:JSON.stringify(data),prefer:"return=minimal"}); }
+
+// SETTINGS
+async function dbGetSettings(businessId) { const r=await sbFetch("business_settings?business_id=eq."+businessId+"&select=*"); return r[0]||null; }
+async function dbSaveSettings(businessId,data) {
+  const existing=await dbGetSettings(businessId);
+  if(existing){ return sbFetch("business_settings?business_id=eq."+businessId,{method:"PATCH",body:JSON.stringify(data),prefer:"return=minimal"}); }
+  return sbFetch("business_settings",{method:"POST",body:JSON.stringify({...data,business_id:businessId})});
+}
+
+// BRANCHES
+async function dbGetBranches(parentId) { return sbFetch("businesses?parent_business_id=eq."+parentId+"&select=*"); }
+async function dbAddBranch(data) { return sbFetch("businesses",{method:"POST",body:JSON.stringify(data)}); }
+
+
 // STATUS BADGE
+// ══════════════════════════════════════════════════════════════════════════════
+// ROLE-BASED PERMISSIONS SYSTEM
+// ══════════════════════════════════════════════════════════════════════════════
+
+const ROLE_PERMISSIONS = {
+  Owner: {
+    nav: ["dashboard","appointments","consultation","clients","pos","inventory","carefind","expenses","debts","staff","reports","settings","reception","triage","doctor","rx_inbox"],
+    canEditPrice: true,
+    canEditStock: true,
+    canDelete: true,
+    canViewReports: true,
+    canExportReports: true,
+    canManageStaff: true,
+    canViewExpenses: true,
+    canAddExpenses: true,
+    canViewDebts: true,
+    canMakeSales: true,
+    canViewSettings: true,
+    label: "Full Access"
+  },
+  Manager: {
+    nav: ["dashboard","appointments","consultation","clients","pos","inventory","carefind","expenses","debts","reports"],
+    canEditPrice: false,
+    canEditStock: false,
+    canDelete: false,
+    canViewReports: true,
+    canExportReports: false,
+    canManageStaff: false,
+    canViewExpenses: true,
+    canAddExpenses: true,
+    canViewDebts: true,
+    canMakeSales: true,
+    canViewSettings: false,
+    label: "Management Access"
+  },
+  Pharmacist: {
+    nav: ["dashboard","consultation","clients","pos","inventory"],
+    canEditPrice: false,
+    canEditStock: false,
+    canDelete: false,
+    canViewReports: false,
+    canExportReports: false,
+    canManageStaff: false,
+    canViewExpenses: false,
+    canAddExpenses: false,
+    canViewDebts: false,
+    canMakeSales: true,
+    canViewSettings: false,
+    label: "Pharmacy Access"
+  },
+  Therapist: {
+    nav: ["dashboard","appointments","consultation","clients","pos"],
+    canEditPrice: false,
+    canEditStock: false,
+    canDelete: false,
+    canViewReports: false,
+    canExportReports: false,
+    canManageStaff: false,
+    canViewExpenses: false,
+    canAddExpenses: false,
+    canViewDebts: false,
+    canMakeSales: true,
+    canViewSettings: false,
+    label: "Therapist Access"
+  },
+  Receptionist: {
+    nav: ["dashboard","appointments","clients","reception"],
+    canEditPrice: false,
+    canEditStock: false,
+    canDelete: false,
+    canViewReports: false,
+    canExportReports: false,
+    canManageStaff: false,
+    canViewExpenses: false,
+    canAddExpenses: false,
+    canViewDebts: false,
+    canMakeSales: false,
+    canViewSettings: false,
+    label: "Reception Access"
+  },
+  Cashier: {
+    nav: ["dashboard","pos","clients"],
+    canEditPrice: false,
+    canEditStock: false,
+    canDelete: false,
+    canViewReports: false,
+    canExportReports: false,
+    canManageStaff: false,
+    canViewExpenses: false,
+    canAddExpenses: false,
+    canViewDebts: false,
+    canMakeSales: true,
+    canViewSettings: false,
+    label: "Cashier Access"
+  },
+  Nurse: {
+    nav: ["dashboard","triage","clients"],
+    canEditPrice: false,
+    canEditStock: false,
+    canDelete: false,
+    canViewReports: false,
+    canExportReports: false,
+    canManageStaff: false,
+    canViewExpenses: false,
+    canAddExpenses: false,
+    canViewDebts: false,
+    canMakeSales: false,
+    canViewSettings: false,
+    label: "Nursing Access"
+  },
+  Doctor: {
+    nav: ["dashboard","doctor","consultation","clients","rx_inbox"],
+    canEditPrice: false,
+    canEditStock: false,
+    canDelete: false,
+    canViewReports: false,
+    canExportReports: false,
+    canManageStaff: false,
+    canViewExpenses: false,
+    canAddExpenses: false,
+    canViewDebts: false,
+    canMakeSales: false,
+    canViewSettings: false,
+    label: "Doctor Access"
+  },
+  "Lab Technician": {
+    nav: ["dashboard","clients"],
+    canEditPrice: false,
+    canEditStock: false,
+    canDelete: false,
+    canViewReports: false,
+    canExportReports: false,
+    canManageStaff: false,
+    canViewExpenses: false,
+    canAddExpenses: false,
+    canViewDebts: false,
+    canMakeSales: false,
+    canViewSettings: false,
+    label: "Lab Access"
+  },
+};
+
+function getPermissions(role) {
+  return ROLE_PERMISSIONS[role] || ROLE_PERMISSIONS["Cashier"];
+}
+
+function canAccess(role, action) {
+  const perms = getPermissions(role);
+  return perms[action] || false;
+}
+
+function getNavForRole(role, isHospital) {
+  const perms = getPermissions(role);
+  const allNav = isHospital ? NAV_ITEMS_HOSPITAL : NAV_ITEMS_DEFAULT;
+  return allNav.filter(item => perms.nav.includes(item[0]));
+}
+
+
+// ══════════════════════════════════════════════════════════════════════════════
+// OFFLINE / PWA SUPPORT
+// ══════════════════════════════════════════════════════════════════════════════
+
+// Cache key for offline data
+const CACHE_KEY = "carehub_offline_v1";
+
+// Save data to localStorage for offline use
+function saveOfflineData(key, data) {
+  try { localStorage.setItem(CACHE_KEY+"_"+key, JSON.stringify(data)); } catch(e) {}
+}
+
+// Load data from localStorage
+function loadOfflineData(key) {
+  try {
+    const d = localStorage.getItem(CACHE_KEY+"_"+key);
+    return d ? JSON.parse(d) : null;
+  } catch(e) { return null; }
+}
+
+// Save pending offline sales
+function savePendingSale(sale) {
+  try {
+    const pending = JSON.parse(localStorage.getItem(CACHE_KEY+"_pending_sales")||"[]");
+    pending.push({...sale, offline_id: Date.now(), synced: false});
+    localStorage.setItem(CACHE_KEY+"_pending_sales", JSON.stringify(pending));
+  } catch(e) {}
+}
+
+// Get pending offline sales
+function getPendingSales() {
+  try {
+    return JSON.parse(localStorage.getItem(CACHE_KEY+"_pending_sales")||"[]");
+  } catch(e) { return []; }
+}
+
+// Clear pending sales after sync
+function clearPendingSales() {
+  try { localStorage.removeItem(CACHE_KEY+"_pending_sales"); } catch(e) {}
+}
+
+// Check if online
+function isOnline() { return navigator.onLine; }
+
+// Sync offline sales when back online
+async function syncOfflineSales(businessId) {
+  if(!isOnline()) return 0;
+  const pending = getPendingSales();
+  if(pending.length === 0) return 0;
+  let synced = 0;
+  for(const sale of pending) {
+    try {
+      const {offline_id, synced: _, ...saleData} = sale;
+      await dbAddSale({...saleData, business_id: businessId});
+      synced++;
+    } catch(e) {}
+  }
+  if(synced > 0) clearPendingSales();
+  return synced;
+}
+
+// OFFLINE BANNER component
+function OfflineBanner() {
+  const [online, setOnline] = useState(navigator.onLine);
+  const [pending, setPending] = useState(getPendingSales().length);
+
+  useEffect(() => {
+    const goOnline = () => { setOnline(true); setPending(getPendingSales().length); };
+    const goOffline = () => setOnline(false);
+    window.addEventListener("online", goOnline);
+    window.addEventListener("offline", goOffline);
+    return () => { window.removeEventListener("online", goOnline); window.removeEventListener("offline", goOffline); };
+  }, []);
+
+  if(online && pending === 0) return null;
+
+  return (
+    <div style={{
+      position: "fixed", top: 0, left: 0, right: 0, zIndex: 9998,
+      padding: "10px 20px",
+      background: online ? "#059669" : "#dc2626",
+      color: "white", fontSize: "13px", fontWeight: "700",
+      display: "flex", alignItems: "center", justifyContent: "space-between",
+      boxShadow: "0 2px 8px rgba(0,0,0,0.2)"
+    }}>
+      <span>{online ? "Back online! " + pending + " sale(s) ready to sync." : "No internet — Working offline. Sales will sync when connected."}</span>
+      {online && pending > 0 && (
+        <button onClick={async () => {
+          const n = await syncOfflineSales();
+          setPending(0);
+          alert(n + " sale(s) synced successfully!");
+        }} style={{padding:"5px 14px",borderRadius:"8px",border:"none",background:"white",color:"#059669",fontWeight:"800",cursor:"pointer",fontSize:"12px"}}>
+          Sync Now
+        </button>
+      )}
+    </div>
+  );
+}
+
+// INSTALL PWA BANNER
+function InstallBanner() {
+  const [prompt, setPrompt] = useState(null);
+  const [shown, setShown] = useState(false);
+  const [dismissed, setDismissed] = useState(!!localStorage.getItem("pwa_dismissed"));
+
+  useEffect(() => {
+    const handler = (e) => { e.preventDefault(); setPrompt(e); setShown(true); };
+    window.addEventListener("beforeinstallprompt", handler);
+    return () => window.removeEventListener("beforeinstallprompt", handler);
+  }, []);
+
+  if(!shown || dismissed) return null;
+
+  return (
+    <div style={{
+      position: "fixed", bottom: "80px", left: "16px", right: "16px", zIndex: 9998,
+      background: "white", borderRadius: "16px", padding: "16px 20px",
+      boxShadow: "0 4px 24px rgba(0,0,0,0.15)", border: "1px solid #f0f0f0",
+      display: "flex", alignItems: "center", gap: "14px"
+    }}>
+      <div style={{width:"44px",height:"44px",borderRadius:"12px",background:TEAL,display:"flex",alignItems:"center",justifyContent:"center",fontSize:"22px",flexShrink:0}}>🏥</div>
+      <div style={{flex:1}}>
+        <div style={{fontWeight:"800",fontSize:"14px",color:"#0f172a"}}>Install CareHub</div>
+        <div style={{fontSize:"12px",color:"#888",marginTop:"2px"}}>Add to home screen for offline access and faster loading</div>
+      </div>
+      <div style={{display:"flex",gap:"8px"}}>
+        <button onClick={()=>{localStorage.setItem("pwa_dismissed","1");setDismissed(true);}} style={{padding:"7px 12px",borderRadius:"8px",border:"1px solid #e5e7eb",background:"white",color:"#888",fontWeight:"600",fontSize:"12px",cursor:"pointer"}}>Later</button>
+        <TealBtn onClick={async()=>{if(prompt){await prompt.prompt();setShown(false);}}} style={{padding:"7px 14px",fontSize:"12px"}}>Install</TealBtn>
+      </div>
+    </div>
+  );
+}
+
+
 function StatusBadge({ status }) {
   const map = {
     at_reception: { label:"At Reception", color:"#2563eb", bg:"#eff6ff" },
@@ -2078,15 +3467,39 @@ function ConsultationPage({ businessType, products }) {
 }
 
 // BUSINESS DASHBOARD
-const NAV_ITEMS_DEFAULT=[["dashboard","🏠","Dashboard"],["appointments","📅","Appointments"],["consultation","📋","Consultations"],["clients","👥","Clients"],["pos","🛒","POS / Sales"],["inventory","📦","Inventory"],["carefind","🔍","CareFind Profile"],["expenses","💸","Expenses"],["debts","🏦","Debts"],["reports","📊","Reports"],["settings","⚙️","Settings"]];
+const NAV_ITEMS_DEFAULT=[["dashboard","🏠","Dashboard"],["appointments","📅","Appointments"],["consultation","📋","Consultations"],["clients","👥","Clients"],["pos","🛒","POS / Sales"],["inventory","📦","Inventory"],["carefind","🔍","CareFind Profile"],["expenses","💸","Expenses"],["debts","🏦","Debts & Purchases"],["staff","👤","Staff"],["reports","📊","Reports"],["settings","⚙️","Settings"]];
 const NAV_ITEMS_HOSPITAL=[["dashboard","🏠","Dashboard"],["reception","👩‍💼","Reception"],["triage","🏥","Triage"],["doctor","👨‍⚕️","Doctor"],["rx_inbox","💊","Prescription Inbox"],["inventory","📦","Inventory"],["carefind","🔍","CareFind Profile"],["expenses","💸","Expenses"],["debts","🏦","Debts"],["reports","📊","Reports"],["settings","⚙️","Settings"]];
 const NAV_ITEMS=[];
 
-function BusinessDashboard({ brand, onLogout }) {
-  const [page,setPage]=useState("dashboard");const [products,setProducts]=useState(INIT_PRODUCTS);const [toast,setToast]=useState("");
+function BusinessDashboard({ brand, staffUser, onLogout }) {
+  const [page,setPage]=useState("dashboard");const [products,setProducts]=useState(INIT_PRODUCTS);const [toast,setToast]=useState("");const [currentUser,setCurrentUser]=useState(staffUser||null);
+
+  // Load products from database on mount and cache for offline
+  useEffect(()=>{
+    if(brand&&brand.id){
+      dbGetProducts(brand.id).then(p=>{
+        if(p&&p.length>0){
+          setProducts(p);
+          saveOfflineData("products_"+brand.id, p);
+        } else {
+          // Try offline cache
+          const cached=loadOfflineData("products_"+brand.id);
+          if(cached&&cached.length>0) setProducts(cached);
+        }
+      }).catch(()=>{
+        const cached=loadOfflineData("products_"+brand.id);
+        if(cached&&cached.length>0) setProducts(cached);
+      });
+      // Sync any offline sales
+      if(isOnline()) syncOfflineSales(brand.id).then(n=>{ if(n>0) setToast(n+" offline sale(s) synced!"); });
+    }
+  },[brand&&brand.id]);
   const bType=(brand.business_type||brand.type||"skincare");const bIcon=businessIcon(bType);
   const isHospital=bType==="hospital";
-  const navItems=isHospital?NAV_ITEMS_HOSPITAL:NAV_ITEMS_DEFAULT;
+  // Role based permissions
+  const userRole=currentUser?currentUser.role:"Owner";
+  const perms=getPermissions(userRole);
+  const navItems=getNavForRole(userRole,isHospital);
 
   const renderPage=()=>{
     switch(page){
@@ -2164,14 +3577,14 @@ function BusinessDashboard({ brand, onLogout }) {
       case "triage":return<TriageModule brand={brand}/>;
       case "doctor":return<DoctorModule brand={brand} products={products}/>;
       case "rx_inbox":return<PrescriptionInbox brand={brand} products={products}/>;
-      case "pos":return<div style={{height:"calc(100vh - 60px)",display:"flex",flexDirection:"column"}}><InlinePOS products={products} setProducts={setProducts}/></div>;
+      case "pos":return<div style={{height:"calc(100vh - 60px)",display:"flex",flexDirection:"column"}}><InlinePOS products={products} setProducts={setProducts} brand={brand}/></div>;
       case "inventory":return<InventoryPage products={products} setProducts={setProducts} brand={brand}/>;
       case "carefind":return<PublicProfilePage brand={brand} products={products}/>;
-      case "appointments":return(<div><SectionHead title="Appointments" sub="All bookings" btn="+ New Appointment"/><Card><div style={{overflowX:"auto"}}><table style={{width:"100%",borderCollapse:"collapse"}}><thead><tr style={{borderBottom:"1px solid #f5f5f5",background:"#fafafa"}}>{["Client","Service","Time","Staff","Status"].map(h=><th key={h} style={{padding:"12px 16px",textAlign:"left",fontSize:"11px",fontWeight:"700",color:"#aaa",textTransform:"uppercase"}}>{h}</th>)}</tr></thead><tbody>{APPOINTMENTS.map(a=><tr key={a.id} style={{borderBottom:"1px solid #f9f9f9"}}><td style={{padding:"12px 16px"}}><div style={{display:"flex",alignItems:"center",gap:"8px"}}><Avatar name={a.client} size={30}/><span style={{fontWeight:"700",fontSize:"13px"}}>{a.client}</span></div></td><td style={{padding:"12px 16px",fontSize:"13px",color:"#666"}}>{a.service}</td><td style={{padding:"12px 16px",fontSize:"13px",fontWeight:"700"}}>{a.time}</td><td style={{padding:"12px 16px",fontSize:"13px",color:"#888"}}>{a.staff}</td><td style={{padding:"12px 16px"}}><Pill label={a.status} type={a.status==="confirmed"?"green":"amber"}/></td></tr>)}</tbody></table></div></Card></div>);
-      case "clients":return(<div><SectionHead title={bType==="pharmacy"?"Patients":"Clients"} sub="All records" btn="+ Add"/><Card><div style={{overflowX:"auto"}}><table style={{width:"100%",borderCollapse:"collapse"}}><thead><tr style={{borderBottom:"1px solid #f5f5f5",background:"#fafafa"}}>{["Name","Type","Visits","Last Visit","Total Spend"].map(h=><th key={h} style={{padding:"12px 16px",textAlign:"left",fontSize:"11px",fontWeight:"700",color:"#aaa",textTransform:"uppercase"}}>{h}</th>)}</tr></thead><tbody>{CLIENTS.map(c=><tr key={c.id} style={{borderBottom:"1px solid #f9f9f9"}}><td style={{padding:"12px 16px"}}><div style={{display:"flex",alignItems:"center",gap:"8px"}}><Avatar name={c.name} size={30} bg="linear-gradient(135deg,#8b5cf6,#a78bfa)"/><span style={{fontWeight:"700",fontSize:"13px"}}>{c.name}</span></div></td><td style={{padding:"12px 16px"}}><Pill label={c.type} type={c.type==="New"?"blue":"teal"}/></td><td style={{padding:"12px 16px",fontSize:"13px",fontWeight:"700"}}>{c.visits}</td><td style={{padding:"12px 16px",fontSize:"13px",color:"#888"}}>{c.last}</td><td style={{padding:"12px 16px",fontSize:"13px",fontWeight:"900"}}>{fmt(c.spend)}</td></tr>)}</tbody></table></div></Card></div>);
-      case "expenses":return(<div><SectionHead title="Expenses" sub="Track all spending" btn="+ Log Expense"/><div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:"14px",marginBottom:"20px"}}><StatCard icon="💸" label="Total This Month" value={fmt(EXPENSES.reduce((s,e)=>s+e.amount,0))}/><StatCard icon="🏠" label="Biggest" value="Rent"/><StatCard icon="📊" label="vs Revenue" value="-61%"/></div><Card><div style={{overflowX:"auto"}}><table style={{width:"100%",borderCollapse:"collapse"}}><thead><tr style={{borderBottom:"1px solid #f5f5f5",background:"#fafafa"}}>{["Category","Description","Amount","Date"].map(h=><th key={h} style={{padding:"12px 16px",textAlign:"left",fontSize:"11px",fontWeight:"700",color:"#aaa",textTransform:"uppercase"}}>{h}</th>)}</tr></thead><tbody>{EXPENSES.map(e=><tr key={e.id} style={{borderBottom:"1px solid #f9f9f9"}}><td style={{padding:"12px 16px"}}><Pill label={e.cat} type="teal"/></td><td style={{padding:"12px 16px",fontSize:"13px",color:"#555"}}>{e.desc}</td><td style={{padding:"12px 16px",fontSize:"13px",fontWeight:"900"}}>{fmt(e.amount)}</td><td style={{padding:"12px 16px",fontSize:"12px",color:"#aaa"}}>{e.date}</td></tr>)}</tbody></table></div></Card></div>);
-      case "debts":return(<div><SectionHead title="Debt Management" sub="Track money owed" btn="+ Record Debt"/><div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"14px",marginBottom:"20px"}}><Card style={{padding:"18px",borderLeft:"4px solid #059669"}}><div style={{fontSize:"12px",color:"#888",fontWeight:"600"}}>Clients Owe You</div><div style={{fontSize:"24px",fontWeight:"900",marginTop:"4px"}}>₦23,500</div></Card><Card style={{padding:"18px",borderLeft:"4px solid #ef4444"}}><div style={{fontSize:"12px",color:"#888",fontWeight:"600"}}>You Owe Suppliers</div><div style={{fontSize:"24px",fontWeight:"900",marginTop:"4px"}}>₦45,000</div></Card></div><Card><div style={{overflowX:"auto"}}><table style={{width:"100%",borderCollapse:"collapse"}}><thead><tr style={{borderBottom:"1px solid #f5f5f5",background:"#fafafa"}}>{["Direction","Party","Amount","Due","Status"].map(h=><th key={h} style={{padding:"12px 16px",textAlign:"left",fontSize:"11px",fontWeight:"700",color:"#aaa",textTransform:"uppercase"}}>{h}</th>)}</tr></thead><tbody>{DEBTS.map(d=><tr key={d.id} style={{borderBottom:"1px solid #f9f9f9"}}><td style={{padding:"12px 16px"}}><Pill label={d.dir==="owes_us"?"↓ Owed to us":"↑ We owe"} type={d.dir==="owes_us"?"green":"red"}/></td><td style={{padding:"12px 16px",fontSize:"13px",fontWeight:"700"}}>{d.party}</td><td style={{padding:"12px 16px",fontSize:"13px",fontWeight:"900"}}>{fmt(d.amount)}</td><td style={{padding:"12px 16px",fontSize:"12px",color:"#aaa"}}>{d.due}</td><td style={{padding:"12px 16px"}}><Pill label={d.status} type={d.status==="overdue"?"red":"amber"}/></td></tr>)}</tbody></table></div></Card></div>);
-      case "reports":return(<div><SectionHead title="Reports & Analytics"/><div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:"14px",marginBottom:"20px"}}><StatCard icon="💰" label="Total Revenue" value="₦1,389,500"/><StatCard icon="💸" label="Total Expenses" value="₦935,000"/><StatCard icon="📈" label="Net Profit" value="₦454,500"/></div><Card style={{padding:"24px",marginBottom:"20px"}}><div style={{fontWeight:"800",fontSize:"16px",marginBottom:"20px"}}>Revenue vs Expenses (6 months)</div>{["Jan","Feb","Mar","Apr","May","Jun"].map((m,i)=>{const rev=[180000,210000,195000,250000,270000,284500];const exp=[120000,135000,140000,160000,180000,200000];return<div key={m} style={{display:"flex",alignItems:"center",gap:"12px",marginBottom:"12px"}}><span style={{width:"28px",fontSize:"12px",color:"#aaa"}}>{m}</span><div style={{flex:1}}><div style={{display:"flex",alignItems:"center",gap:"8px",marginBottom:"3px"}}><div style={{height:"8px",borderRadius:"4px",background:TEAL,width:((rev[i]/284500)*100)+"%",minWidth:"4px"}}/><span style={{fontSize:"11px",color:"#888"}}>₦{(rev[i]/1000).toFixed(0)}k</span></div><div style={{display:"flex",alignItems:"center",gap:"8px"}}><div style={{height:"8px",borderRadius:"4px",background:"#fecaca",width:((exp[i]/284500)*100)+"%",minWidth:"4px"}}/><span style={{fontSize:"11px",color:"#aaa"}}>₦{(exp[i]/1000).toFixed(0)}k</span></div></div></div>;})}  </Card><div style={{display:"flex",gap:"10px"}}>{["Export PDF","Export Excel","Print Report"].map(l=><GhostBtn key={l}>{l}</GhostBtn>)}</div></div>);
+      case "appointments":return<AppointmentsPage brand={brand} currentUser={currentUser}/>;
+      case "clients":return<ClientsPage brand={brand}/>;
+      case "expenses":return<ExpensesPage brand={brand}/>;
+      case "debts":return<DebtsPage brand={brand}/>;
+      case "reports":return<ReportsPage brand={brand}/>;
       case "settings":return(<div><SectionHead title="Settings"/><Card style={{padding:"28px",maxWidth:"520px"}}><div style={{marginBottom:"20px",padding:"14px",borderRadius:"12px",background:"#f0fdfa",border:"1px solid #ccfbf1",display:"flex",alignItems:"center",gap:"12px"}}><div style={{fontSize:"28px"}}>{bIcon}</div><div><div style={{fontWeight:"800",fontSize:"14px",color:"#0f172a"}}>{businessName(bType)}</div><div style={{fontSize:"12px",color:"#888",marginTop:"2px"}}>Your business type determines your consultation form</div></div></div>{[["Business Name",brand.name],["Owner Name",brand.owner],["Email",brand.email],["Phone",brand.phone],["WhatsApp",brand.whatsapp||""],["Business Hours",brand.hours||""],["Address",brand.address]].map(([l,v])=>(<div key={l} style={{marginBottom:"14px"}}><div style={{fontSize:"11px",fontWeight:"700",color:"#666",marginBottom:"6px"}}>{l}</div><input defaultValue={v} style={{width:"100%",padding:"10px 14px",borderRadius:"10px",border:"1px solid #e5e7eb",fontSize:"13px",outline:"none",boxSizing:"border-box"}}/></div>))}<Toggle label="Visible on CareFind" desc="Allow patients to find your business on the public CareFind search platform" value={(brand.visible_on_carefind||brand.visibleOnCareFind)||false} onChange={()=>{}}/><TealBtn style={{width:"100%",padding:"12px",marginTop:"16px"}}>Save Changes</TealBtn></Card></div>);
       default:return(<div style={{display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",height:"60vh",textAlign:"center"}}><div style={{fontSize:"56px",marginBottom:"16px"}}>🔨</div><div style={{fontSize:"20px",fontWeight:"800",marginBottom:"8px"}}>{(navItems.find(n=>n[0]===page)||[])[2]||page}</div><div style={{fontSize:"14px",color:"#aaa"}}>Coming soon</div></div>);
     }
@@ -2179,11 +3592,13 @@ function BusinessDashboard({ brand, onLogout }) {
 
   return(
     <div style={{display:"flex",height:"100vh",fontFamily:"system-ui,sans-serif",overflow:"hidden"}}>
+      <OfflineBanner/>
+      <InstallBanner/>
       <div style={{width:"210px",flexShrink:0,backgroundImage:DARK,display:"flex",flexDirection:"column",overflowY:"auto"}}>
         <div style={{padding:"16px 14px",borderBottom:"1px solid rgba(255,255,255,0.08)"}}>
           <div style={{display:"flex",alignItems:"center",gap:"10px"}}>
             <div style={{width:"36px",height:"36px",borderRadius:"10px",background:TEAL,display:"flex",alignItems:"center",justifyContent:"center",fontSize:"18px"}}>{bIcon}</div>
-            <div><div style={{color:"white",fontWeight:"800",fontSize:"12px",lineHeight:"1.3",maxWidth:"130px",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{brand.name}</div><div style={{color:"#14b8a6",fontSize:"10px",marginTop:"2px"}}>{businessName(bType).split("/")[0].trim()}</div></div>
+            <div><div style={{color:"white",fontWeight:"800",fontSize:"12px",lineHeight:"1.3",maxWidth:"130px",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{brand.name}</div><div style={{color:"#14b8a6",fontSize:"10px",marginTop:"2px"}}>{currentUser?currentUser.full_name+" · "+currentUser.role:businessName(bType).split("/")[0].trim()}</div></div>
           </div>
         </div>
         <nav style={{flex:1,padding:"8px"}}>
@@ -2213,13 +3628,21 @@ function BusinessDashboard({ brand, onLogout }) {
 
 // ROOT APP
 export default function CareHub() {
-  const [screen,setScreen]=useState("landing");const [brands,setBrands]=useState(INIT_BRANDS);const [currentBrand,setCurrentBrand]=useState(null);
+  const [screen,setScreen]=useState("landing");const [brands,setBrands]=useState([]);const [currentBrand,setCurrentBrand]=useState(null);const [currentStaff,setCurrentStaff]=useState(null);
+
+  // Always start on landing page — load businesses from database
+  useEffect(()=>{
+    setScreen("landing");
+    setCurrentBrand(null);
+    // Pre-load businesses in background so login is fast
+    dbGetBusinesses().then(b=>setBrands(b||[])).catch(()=>{});
+  },[]);
   const handleSubmit=data=>{
     setBrands(prev=>[...prev,{id:prev.length+1,name:data.businessName,owner:data.firstName+" "+data.lastName,email:data.ownerEmail,phone:data.ownerPhone||"--",whatsapp:data.whatsapp||"",address:data.address||"--",state:data.state||"",city:data.city||"",lat:parseFloat(data.lat)||0,lng:parseFloat(data.lng)||0,hours:data.businessHours||"",mapsLink:data.mapsLink||"",status:"pending",date:new Date().toLocaleDateString("en-NG"),password:data.password,type:data.businessType||"skincare",visibleOnCareFind:data.visibleOnCareFind!==false}]);
   };
   if(screen==="landing") return<LandingPage onLogin={()=>setScreen("login")} onRegister={()=>setScreen("register")}/>;
   if(screen==="register") return<Registration onBack={()=>setScreen("login")} onSubmitted={handleSubmit}/>;
   if(screen==="admin") return<AdminDashboard onLogout={()=>setScreen("landing")}/>;
-  if(screen==="business"&&currentBrand) return<BusinessDashboard brand={currentBrand} onLogout={()=>{setCurrentBrand(null);setScreen("landing");}}/>;
-  return<LoginScreen brands={brands} onAdminLogin={()=>setScreen("admin")} onBrandLogin={b=>{setCurrentBrand(b);setScreen("business");}} onRegister={()=>setScreen("register")} onHome={()=>setScreen("landing")}/>;
+  if(screen==="business"&&currentBrand) return<BusinessDashboard brand={currentBrand} staffUser={currentStaff} onLogout={()=>{setCurrentBrand(null);setCurrentStaff(null);setScreen("landing");}}/>;
+  return<LoginScreen brands={brands} onAdminLogin={()=>setScreen("admin")} onBrandLogin={(b,staff)=>{setCurrentBrand(b);setCurrentStaff(staff||null);setScreen("business");}} onRegister={()=>setScreen("register")} onHome={()=>setScreen("landing")}/>;
 }
