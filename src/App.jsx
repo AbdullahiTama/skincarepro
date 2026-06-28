@@ -1015,6 +1015,695 @@ function InlinePOS({ products, setProducts }) {
 
 // PHARMACY & SKINCARE CONSULTATIONS (condensed)
 
+
+// ══════════════════════════════════════════════════════════════════════════════
+// HOSPITAL WORKFLOW — Full real-time department flow
+// ══════════════════════════════════════════════════════════════════════════════
+
+// DB helpers for hospital
+async function dbCreatePatient(data) {
+  return sbFetch("patients", { method:"POST", body:JSON.stringify(data) });
+}
+async function dbGetPatients(businessId) {
+  return sbFetch("patients?business_id=eq."+businessId+"&order=created_at.desc&select=*");
+}
+async function dbUpdatePatientStatus(id, status) {
+  return sbFetch("patients?id=eq."+id, { method:"PATCH", body:JSON.stringify({status:status}), prefer:"return=minimal" });
+}
+async function dbSaveTriage(data) {
+  return sbFetch("triage", { method:"POST", body:JSON.stringify(data) });
+}
+async function dbGetTriage(patientId) {
+  const r = await sbFetch("triage?patient_id=eq."+patientId+"&select=*");
+  return r[0]||null;
+}
+async function dbSaveConsultation(data) {
+  return sbFetch("consultations", { method:"POST", body:JSON.stringify(data) });
+}
+async function dbGetConsultation(patientId) {
+  const r = await sbFetch("consultations?patient_id=eq."+patientId+"&select=*");
+  return r[0]||null;
+}
+async function dbSavePrescription(data) {
+  return sbFetch("prescriptions", { method:"POST", body:JSON.stringify(data) });
+}
+async function dbGetPrescriptions(businessId) {
+  return sbFetch("prescriptions?business_id=eq."+businessId+"&order=created_at.desc&select=*");
+}
+async function dbUpdatePrescriptionStatus(id, status) {
+  return sbFetch("prescriptions?id=eq."+id, { method:"PATCH", body:JSON.stringify({status:status}), prefer:"return=minimal" });
+}
+async function dbSaveFollowUp(data) {
+  return sbFetch("follow_ups", { method:"POST", body:JSON.stringify(data) });
+}
+
+// STATUS BADGE
+function StatusBadge({ status }) {
+  const map = {
+    at_reception: { label:"At Reception", color:"#2563eb", bg:"#eff6ff" },
+    at_triage:    { label:"At Triage",    color:"#d97706", bg:"#fffbeb" },
+    at_doctor:    { label:"With Doctor",  color:"#7c3aed", bg:"#f5f3ff" },
+    at_pharmacy:  { label:"At Pharmacy",  color:"#0f766e", bg:"#f0fdfa" },
+    at_lab:       { label:"At Lab",       color:"#db2777", bg:"#fdf2f8" },
+    discharged:   { label:"Discharged",   color:"#059669", bg:"#f0fdf4" },
+    admitted:     { label:"Admitted",     color:"#dc2626", bg:"#fef2f2" },
+  };
+  const s = map[status]||{ label:status||"Unknown", color:"#666", bg:"#f3f4f6" };
+  return <span style={{padding:"3px 10px",borderRadius:"20px",fontSize:"11px",fontWeight:"700",background:s.bg,color:s.color}}>{s.label}</span>;
+}
+
+// ── RECEPTION MODULE ──────────────────────────────────────────────────────────
+function ReceptionModule({ brand, onPatientSent }) {
+  const [form,setForm]=useState({ regDate:todayDate(), regNo:"REG-"+Math.floor(Math.random()*90000+10000) });
+  const [saving,setSaving]=useState(false);
+  const [saved,setSaved]=useState(false);
+  const [patients,setPatients]=useState([]);
+  const [loading,setLoading]=useState(true);
+  const [view,setView]=useState("list"); // list | new
+  const f=(k,v)=>setForm(p=>({...p,[k]:v}));
+
+  useEffect(()=>{loadPatients();},[]);
+
+  async function loadPatients() {
+    try { const p=await dbGetPatients(brand.id); setPatients(p||[]); } catch(e){}
+    setLoading(false);
+  }
+
+  async function submitRegistration() {
+    if(!form.patName||!form.phone){ alert("Please enter patient name and phone number."); return; }
+    setSaving(true);
+    try {
+      const result = await dbCreatePatient({
+        business_id: brand.id,
+        reg_no: form.regNo,
+        full_name: form.patName,
+        date_of_birth: form.dob||"",
+        gender: form.gender||"",
+        phone: form.phone,
+        address: form.address||"",
+        next_of_kin: form.nokName||"",
+        next_of_kin_phone: form.nokPhone||"",
+        insurance: form.insurance||"None",
+        pay_status: form.payStatus||"Pending",
+        department: form.dept||"",
+        assigned_doctor: form.doctor||"",
+        status: "at_triage"
+      });
+      setSaved(true);
+      loadPatients();
+    } catch(e){ alert("Error saving patient. Please try again."); }
+    setSaving(false);
+  }
+
+  if(view==="new" && !saved) return (
+    <div>
+      <div style={{display:"flex",alignItems:"center",gap:"12px",marginBottom:"20px"}}>
+        <button onClick={()=>setView("list")} style={{width:"36px",height:"36px",borderRadius:"10px",background:"white",border:"1px solid #e5e7eb",cursor:"pointer",fontSize:"18px",display:"flex",alignItems:"center",justifyContent:"center"}}>←</button>
+        <div><div style={{fontWeight:"900",fontSize:"18px",color:"#0f172a"}}>New Patient Registration</div><div style={{fontSize:"12px",color:"#aaa"}}>Reception — Step 1 of 5</div></div>
+      </div>
+      <div style={{padding:"10px 14px",borderRadius:"10px",background:"#eff6ff",border:"1px solid #bfdbfe",fontSize:"12px",color:"#2563eb",fontWeight:"600",marginBottom:"16px"}}>
+        👩‍💼 Reception Module — Data entered here flows automatically to Triage, Doctor, and Pharmacy
+      </div>
+      <Card style={{padding:"20px",marginBottom:"16px"}}>
+        <div style={{display:"flex",flexDirection:"column",gap:"14px"}}>
+          <div style={{fontSize:"15px",fontWeight:"800",color:"#0f172a"}}>Patient Information</div>
+          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"12px"}}>
+            <Inp label="Registration No." value={form.regNo} onChange={v=>f("regNo",v)}/>
+            <Inp label="Registration Date" value={form.regDate} onChange={v=>f("regDate",v)} type="date"/>
+          </div>
+          <Inp label="Full Name *" value={form.patName} onChange={v=>f("patName",v)} placeholder="Patient full name" required/>
+          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"12px"}}>
+            <Inp label="Date of Birth" value={form.dob} onChange={v=>f("dob",v)} type="date"/>
+            <Sel label="Gender" value={form.gender} onChange={v=>f("gender",v)} options={["Male","Female","Other"]}/>
+          </div>
+          <Inp label="Phone Number *" value={form.phone} onChange={v=>f("phone",v)} placeholder="08012345678" required/>
+          <Inp label="Home Address" value={form.address} onChange={v=>f("address",v)} placeholder="Full home address"/>
+          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"12px"}}>
+            <Inp label="Next of Kin Name" value={form.nokName} onChange={v=>f("nokName",v)} placeholder="Full name"/>
+            <Inp label="Next of Kin Phone" value={form.nokPhone} onChange={v=>f("nokPhone",v)} placeholder="Phone number"/>
+          </div>
+          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"12px"}}>
+            <Sel label="Department" value={form.dept} onChange={v=>f("dept",v)} options={["General OPD","Emergency","Cardiology","Pediatrics","Obstetrics","Surgery","Orthopedics","ENT","Ophthalmology","Dermatology","Psychiatry","Neurology","Oncology","Other"]}/>
+            <Inp label="Assigned Doctor" value={form.doctor} onChange={v=>f("doctor",v)} placeholder="Dr. Name"/>
+          </div>
+          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"12px"}}>
+            <Sel label="Insurance / HMO" value={form.insurance} onChange={v=>f("insurance",v)} options={["None / Self-pay","NHIS","PHIS","Leadway","Aiico","Hygeia","Reliance","AXA Mansard","Other"]}/>
+            <Sel label="Payment Status" value={form.payStatus} onChange={v=>f("payStatus",v)} options={["Paid","Pending","Insurance","Waived"]}/>
+          </div>
+        </div>
+      </Card>
+      <button onClick={submitRegistration} disabled={saving}
+        style={{width:"100%",padding:"14px",borderRadius:"12px",border:"none",background:TEAL,color:"white",fontWeight:"800",fontSize:"15px",cursor:"pointer",opacity:saving?0.7:1}}>
+        {saving?"Saving...":"Register Patient & Send to Triage →"}
+      </button>
+    </div>
+  );
+
+  if(saved) return (
+    <div style={{textAlign:"center",padding:"40px 20px"}}>
+      <div style={{fontSize:"56px",marginBottom:"16px"}}>✅</div>
+      <div style={{fontSize:"22px",fontWeight:"900",marginBottom:"8px"}}>Patient Registered!</div>
+      <div style={{fontSize:"14px",color:"#888",marginBottom:"8px"}}><strong>{form.patName}</strong> has been registered</div>
+      <div style={{display:"inline-flex",alignItems:"center",gap:"8px",padding:"8px 16px",borderRadius:"20px",background:"#fffbeb",border:"1px solid #fcd34d",fontSize:"13px",color:"#d97706",fontWeight:"700",marginBottom:"24px"}}>
+        🔔 Patient sent to Triage — Nurse can now see this patient
+      </div>
+      <div style={{display:"flex",gap:"10px",justifyContent:"center",flexWrap:"wrap"}}>
+        <TealBtn onClick={()=>{ setForm({regDate:todayDate(),regNo:"REG-"+Math.floor(Math.random()*90000+10000)}); setSaved(false); setView("new"); }}>Register Another Patient</TealBtn>
+        <GhostBtn onClick={()=>{ setSaved(false); setView("list"); }}>Back to Patient List</GhostBtn>
+      </div>
+    </div>
+  );
+
+  return (
+    <div>
+      <SectionHead title="Reception" sub="Register patients and send to triage" btn="+ Register New Patient" onBtn={()=>setView("new")}/>
+      <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:"14px",marginBottom:"20px"}}>
+        <StatCard icon="👥" label="Total Today" value={patients.length}/>
+        <StatCard icon="⏳" label="At Triage" value={patients.filter(p=>p.status==="at_triage").length}/>
+        <StatCard icon="✅" label="Discharged" value={patients.filter(p=>p.status==="discharged").length}/>
+      </div>
+      {loading?<div style={{textAlign:"center",padding:"40px",color:"#aaa"}}>⏳ Loading patients...</div>
+      :patients.length===0?<div style={{textAlign:"center",padding:"60px",color:"#ccc"}}><div style={{fontSize:"40px",marginBottom:"12px"}}>👥</div><div>No patients today. Register the first one!</div></div>
+      :<Card>
+        <div style={{overflowX:"auto"}}>
+          <table style={{width:"100%",borderCollapse:"collapse"}}>
+            <thead><tr style={{borderBottom:"1px solid #f5f5f5",background:"#fafafa"}}>{["Reg No.","Patient","Phone","Department","Doctor","Status"].map(h=><th key={h} style={{padding:"12px 16px",textAlign:"left",fontSize:"11px",fontWeight:"700",color:"#aaa",textTransform:"uppercase",whiteSpace:"nowrap"}}>{h}</th>)}</tr></thead>
+            <tbody>{patients.map(p=>(
+              <tr key={p.id} style={{borderBottom:"1px solid #f9f9f9"}}>
+                <td style={{padding:"12px 16px",fontSize:"12px",color:"#888",fontWeight:"600"}}>{p.reg_no}</td>
+                <td style={{padding:"12px 16px"}}><div style={{fontWeight:"700",fontSize:"13px"}}>{p.full_name}</div><div style={{fontSize:"11px",color:"#aaa"}}>{p.gender||""} {p.date_of_birth?"· DOB: "+p.date_of_birth:""}</div></td>
+                <td style={{padding:"12px 16px",fontSize:"13px",color:"#666"}}>{p.phone}</td>
+                <td style={{padding:"12px 16px",fontSize:"13px",color:"#666"}}>{p.department||"—"}</td>
+                <td style={{padding:"12px 16px",fontSize:"13px",color:"#666"}}>{p.assigned_doctor||"—"}</td>
+                <td style={{padding:"12px 16px"}}><StatusBadge status={p.status}/></td>
+              </tr>
+            ))}</tbody>
+          </table>
+        </div>
+      </Card>}
+    </div>
+  );
+}
+
+// ── TRIAGE MODULE ─────────────────────────────────────────────────────────────
+function TriageModule({ brand }) {
+  const [patients,setPatients]=useState([]);
+  const [loading,setLoading]=useState(true);
+  const [selected,setSelected]=useState(null);
+  const [triage,setTriage]=useState({});
+  const [saving,setSaving]=useState(false);
+  const [done,setDone]=useState(false);
+
+  useEffect(()=>{ loadPatients(); },[]);
+
+  async function loadPatients() {
+    try {
+      const all = await dbGetPatients(brand.id);
+      setPatients((all||[]).filter(p=>p.status==="at_triage"||p.status==="at_doctor"||p.status==="at_pharmacy"||p.status==="discharged"));
+    } catch(e){}
+    setLoading(false);
+  }
+
+  async function sendToDoctor() {
+    if(!selected) return;
+    setSaving(true);
+    try {
+      await dbSaveTriage({
+        patient_id: selected.id,
+        business_id: brand.id,
+        weight: triage.weight||"", height: triage.height||"",
+        bp: triage.bp||"", pulse: triage.pulse||"",
+        temperature: triage.temp||"", rr: triage.rr||"",
+        spo2: triage.spo2||"", blood_sugar: triage.bs||"",
+        chief_complaint: triage.complaint||"",
+        allergies: triage.allergies||"",
+        nurse_name: triage.nurseName||"",
+        status: "done"
+      });
+      await dbUpdatePatientStatus(selected.id, "at_doctor");
+      setDone(true);
+      loadPatients();
+    } catch(e){ alert("Error saving triage. Please try again."); }
+    setSaving(false);
+  }
+
+  if(selected && !done) return (
+    <div>
+      <div style={{display:"flex",alignItems:"center",gap:"12px",marginBottom:"20px"}}>
+        <button onClick={()=>setSelected(null)} style={{width:"36px",height:"36px",borderRadius:"10px",background:"white",border:"1px solid #e5e7eb",cursor:"pointer",fontSize:"18px",display:"flex",alignItems:"center",justifyContent:"center"}}>←</button>
+        <div><div style={{fontWeight:"900",fontSize:"18px",color:"#0f172a"}}>Triage — {selected.full_name}</div><div style={{fontSize:"12px",color:"#aaa"}}>{selected.reg_no} · {selected.department||"General OPD"}</div></div>
+      </div>
+      <div style={{padding:"10px 14px",borderRadius:"10px",background:"#fffbeb",border:"1px solid #fcd34d",fontSize:"12px",color:"#92400e",fontWeight:"600",marginBottom:"16px"}}>
+        🏥 Nurse Module — Vitals entered here go directly to the doctor
+      </div>
+      {/* Patient summary from reception */}
+      <Card style={{padding:"16px",marginBottom:"16px",background:"#f0fdfa",border:"1px solid #ccfbf1"}}>
+        <div style={{fontSize:"12px",fontWeight:"700",color:TEALC,marginBottom:"8px"}}>Patient Info — From Reception</div>
+        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"8px"}}>
+          {[["Name",selected.full_name],["Phone",selected.phone],["DOB",selected.date_of_birth||"—"],["Gender",selected.gender||"—"],["Department",selected.department||"—"],["Doctor",selected.assigned_doctor||"—"],["Insurance",selected.insurance||"—"],["Payment",selected.pay_status||"—"]].map(([l,v])=>(
+            <div key={l}><div style={{fontSize:"10px",color:"#aaa",fontWeight:"700"}}>{l}</div><div style={{fontSize:"12px",fontWeight:"600",color:"#0f172a"}}>{v}</div></div>
+          ))}
+        </div>
+      </Card>
+      <Card style={{padding:"20px",marginBottom:"16px"}}>
+        <div style={{fontSize:"15px",fontWeight:"800",color:"#0f172a",marginBottom:"16px"}}>Vital Signs</div>
+        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"12px"}}>
+          <Inp label="Weight (kg)" value={triage.weight} onChange={v=>setTriage(p=>({...p,weight:v}))} placeholder="e.g. 68"/>
+          <Inp label="Height (cm)" value={triage.height} onChange={v=>setTriage(p=>({...p,height:v}))} placeholder="e.g. 170"/>
+          <Inp label="Blood Pressure" value={triage.bp} onChange={v=>setTriage(p=>({...p,bp:v}))} placeholder="e.g. 120/80 mmHg"/>
+          <Inp label="Pulse (bpm)" value={triage.pulse} onChange={v=>setTriage(p=>({...p,pulse:v}))} placeholder="e.g. 72"/>
+          <Inp label="Temperature (°C)" value={triage.temp} onChange={v=>setTriage(p=>({...p,temp:v}))} placeholder="e.g. 37.2"/>
+          <Inp label="Respiratory Rate" value={triage.rr} onChange={v=>setTriage(p=>({...p,rr:v}))} placeholder="e.g. 16/min"/>
+          <Inp label="Oxygen Saturation" value={triage.spo2} onChange={v=>setTriage(p=>({...p,spo2:v}))} placeholder="e.g. 98%"/>
+          <Inp label="Blood Sugar (optional)" value={triage.bs} onChange={v=>setTriage(p=>({...p,bs:v}))} placeholder="e.g. 5.6 mmol/L"/>
+        </div>
+        <div style={{marginTop:"14px",display:"flex",flexDirection:"column",gap:"12px"}}>
+          <Textarea label="Chief Complaint" value={triage.complaint} onChange={v=>setTriage(p=>({...p,complaint:v}))} placeholder="Patient's main complaint in brief..." rows={2}/>
+          <div>
+            <Textarea label="Allergies (if any)" value={triage.allergies} onChange={v=>setTriage(p=>({...p,allergies:v}))} placeholder="Known allergies..." rows={2}/>
+            {triage.allergies&&<div style={{marginTop:"6px",padding:"8px 12px",borderRadius:"8px",background:"#fef2f2",border:"1px solid #fecaca",fontSize:"12px",color:"#dc2626",fontWeight:"700"}}>⚠️ ALLERGY ALERT: {triage.allergies}</div>}
+          </div>
+          <Inp label="Nurse Name" value={triage.nurseName} onChange={v=>setTriage(p=>({...p,nurseName:v}))} placeholder="Your name"/>
+        </div>
+      </Card>
+      <button onClick={sendToDoctor} disabled={saving}
+        style={{width:"100%",padding:"14px",borderRadius:"12px",border:"none",background:TEAL,color:"white",fontWeight:"800",fontSize:"15px",cursor:"pointer",opacity:saving?0.7:1}}>
+        {saving?"Saving...":"Save & Send to Doctor →"}
+      </button>
+    </div>
+  );
+
+  if(done) return (
+    <div style={{textAlign:"center",padding:"40px 20px"}}>
+      <div style={{fontSize:"56px",marginBottom:"16px"}}>✅</div>
+      <div style={{fontSize:"22px",fontWeight:"900",marginBottom:"8px"}}>Triage Complete!</div>
+      <div style={{fontSize:"14px",color:"#888",marginBottom:"8px"}}>Vitals saved for <strong>{selected.full_name}</strong></div>
+      <div style={{display:"inline-flex",alignItems:"center",gap:"8px",padding:"8px 16px",borderRadius:"20px",background:"#f5f3ff",border:"1px solid #ddd6fe",fontSize:"13px",color:"#7c3aed",fontWeight:"700",marginBottom:"24px"}}>
+        🔔 Patient sent to Doctor — Doctor can now see full file
+      </div>
+      <div style={{display:"flex",gap:"10px",justifyContent:"center"}}><TealBtn onClick={()=>{ setSelected(null); setDone(false); setTriage({}); loadPatients(); }}>Back to Patient List</TealBtn></div>
+    </div>
+  );
+
+  return (
+    <div>
+      <SectionHead title="Triage" sub="Patients waiting for nurse assessment"/>
+      {loading?<div style={{textAlign:"center",padding:"40px",color:"#aaa"}}>⏳ Loading...</div>
+      :patients.filter(p=>p.status==="at_triage").length===0
+        ?<div style={{textAlign:"center",padding:"60px",color:"#ccc"}}><div style={{fontSize:"40px",marginBottom:"12px"}}>🏥</div><div>No patients at triage right now</div><div style={{fontSize:"12px",marginTop:"8px"}}>Patients appear here after reception registers them</div></div>
+        :<div style={{display:"flex",flexDirection:"column",gap:"12px"}}>
+          {patients.filter(p=>p.status==="at_triage").map(p=>(
+            <Card key={p.id} style={{padding:"18px",display:"flex",alignItems:"center",justifyContent:"space-between",gap:"12px",flexWrap:"wrap"}}>
+              <div style={{display:"flex",alignItems:"center",gap:"14px"}}>
+                <Avatar name={p.full_name} size={44}/>
+                <div>
+                  <div style={{fontWeight:"800",fontSize:"15px"}}>{p.full_name}</div>
+                  <div style={{fontSize:"12px",color:"#888",marginTop:"2px"}}>{p.reg_no} · {p.phone}</div>
+                  <div style={{fontSize:"12px",color:"#888",marginTop:"2px"}}>{p.department||"General OPD"} · {p.assigned_doctor||"No doctor assigned"}</div>
+                </div>
+              </div>
+              <div style={{display:"flex",alignItems:"center",gap:"10px"}}>
+                <StatusBadge status={p.status}/>
+                <TealBtn onClick={()=>{setSelected(p);setTriage({});setDone(false);}}>Start Triage</TealBtn>
+              </div>
+            </Card>
+          ))}
+        </div>}
+    </div>
+  );
+}
+
+// ── DOCTOR MODULE ─────────────────────────────────────────────────────────────
+function DoctorModule({ brand, products }) {
+  const [patients,setPatients]=useState([]);
+  const [loading,setLoading]=useState(true);
+  const [selected,setSelected]=useState(null);
+  const [triageData,setTriageData]=useState(null);
+  const [consult,setConsult]=useState({});
+  const [meds,setMeds]=useState([]);
+  const [medSearch,setMedSearch]=useState("");
+  const [saving,setSaving]=useState(false);
+  const [done,setDone]=useState(false);
+  const [sentTo,setSentTo]=useState("");
+
+  useEffect(()=>{ loadPatients(); },[]);
+
+  async function loadPatients() {
+    try {
+      const all = await dbGetPatients(brand.id);
+      setPatients((all||[]).filter(p=>p.status==="at_doctor"));
+    } catch(e){}
+    setLoading(false);
+  }
+
+  async function openPatient(p) {
+    setSelected(p);
+    setConsult({});
+    setMeds([]);
+    setDone(false);
+    setSentTo("");
+    try {
+      const t = await dbGetTriage(p.id);
+      setTriageData(t);
+    } catch(e){}
+  }
+
+  const medResults = products.filter(p=>p.cat==="Medicines"&&(p.name.toLowerCase().includes(medSearch.toLowerCase())||(p.genericName||"").toLowerCase().includes(medSearch.toLowerCase())));
+  const addMed = m => { setMeds(prev=>[...prev,{...m,dose:"",freq:"",dur:"",route:"Oral",instructions:""}]); setMedSearch(""); };
+  const updMed = (i,k,v) => setMeds(prev=>prev.map((m,j)=>j===i?{...m,[k]:v}:m));
+
+  async function sendToPharmacy() {
+    if(!consult.dx1){ alert("Please enter at least a primary diagnosis."); return; }
+    setSaving(true);
+    try {
+      const c = await dbSaveConsultation({
+        patient_id: selected.id,
+        business_id: brand.id,
+        hpi: consult.hpi||"",
+        examination: consult.exam||"",
+        primary_diagnosis: consult.dx1||"",
+        secondary_diagnosis: consult.dx2||"",
+        clinical_notes: consult.notes||"",
+        disposition: consult.disposition||"Discharge",
+        referral_dest: consult.refDest||"",
+        referral_reason: consult.refReason||"",
+        ward: consult.ward||"",
+        counselling: consult.counselling||"",
+        doctor_name: consult.doctorName||"",
+        status: "sent_to_pharmacy"
+      });
+      if(meds.length>0||consult.labTests||consult.imaging) {
+        await dbSavePrescription({
+          patient_id: selected.id,
+          consultation_id: c[0]&&c[0].id ? c[0].id : null,
+          business_id: brand.id,
+          patient_name: selected.full_name,
+          doctor_name: consult.doctorName||"",
+          medicines: JSON.stringify(meds),
+          lab_tests: consult.labTests||"",
+          imaging: consult.imaging||"",
+          notes: consult.prescNotes||"",
+          status: "pending"
+        });
+      }
+      if(consult.fuDate) {
+        await dbSaveFollowUp({
+          patient_id: selected.id,
+          business_id: brand.id,
+          follow_up_date: consult.fuDate,
+          clinic: consult.fuClinic||"",
+          reason: consult.fuReason||"",
+          status: "scheduled"
+        });
+      }
+      await dbUpdatePatientStatus(selected.id, meds.length>0?"at_pharmacy":"discharged");
+      setSentTo(meds.length>0?"pharmacy":"discharged");
+      setDone(true);
+      loadPatients();
+    } catch(e){ alert("Error saving consultation. Please try again."); }
+    setSaving(false);
+  }
+
+  if(selected && !done) return (
+    <div>
+      <div style={{display:"flex",alignItems:"center",gap:"12px",marginBottom:"20px"}}>
+        <button onClick={()=>setSelected(null)} style={{width:"36px",height:"36px",borderRadius:"10px",background:"white",border:"1px solid #e5e7eb",cursor:"pointer",fontSize:"18px",display:"flex",alignItems:"center",justifyContent:"center"}}>←</button>
+        <div><div style={{fontWeight:"900",fontSize:"18px",color:"#0f172a"}}>Doctor Consultation</div><div style={{fontSize:"12px",color:"#aaa"}}>{selected.full_name} · {selected.reg_no}</div></div>
+      </div>
+      <div style={{padding:"10px 14px",borderRadius:"10px",background:"#f5f3ff",border:"1px solid #ddd6fe",fontSize:"12px",color:"#7c3aed",fontWeight:"600",marginBottom:"16px"}}>
+        👨‍⚕️ Doctor Module — Patient info auto-filled from Reception and Triage
+      </div>
+
+      {/* Patient summary */}
+      <Card style={{padding:"16px",marginBottom:"16px",background:"#fafafa"}}>
+        <div style={{fontSize:"12px",fontWeight:"700",color:"#555",marginBottom:"10px"}}>Patient Summary — Auto-filled</div>
+        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:"8px",marginBottom:"10px"}}>
+          {[["Name",selected.full_name],["Reg No.",selected.reg_no],["Gender",selected.gender||"—"],["DOB",selected.date_of_birth||"—"],["Phone",selected.phone],["Department",selected.department||"—"],["Doctor",selected.assigned_doctor||"—"],["Insurance",selected.insurance||"—"]].map(([l,v])=>(
+            <div key={l}><div style={{fontSize:"10px",color:"#aaa",fontWeight:"700"}}>{l}</div><div style={{fontSize:"12px",fontWeight:"600",color:"#0f172a"}}>{v}</div></div>
+          ))}
+        </div>
+        {triageData&&<>
+          <div style={{borderTop:"1px solid #f0f0f0",paddingTop:"10px",marginTop:"4px"}}>
+            <div style={{fontSize:"12px",fontWeight:"700",color:"#555",marginBottom:"8px"}}>Vitals — From Nurse</div>
+            <div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:"6px"}}>
+              {[["BP",triageData.bp],["Pulse",triageData.pulse],["Temp",triageData.temperature],["SpO2",triageData.spo2],["Weight",triageData.weight],["Height",triageData.height],["RR",triageData.rr],["Blood Sugar",triageData.blood_sugar]].filter(([,v])=>v).map(([l,v])=>(
+                <div key={l} style={{padding:"6px 8px",borderRadius:"8px",background:"white",border:"1px solid #f0f0f0"}}><div style={{fontSize:"9px",color:"#aaa",fontWeight:"700"}}>{l}</div><div style={{fontSize:"12px",fontWeight:"700",color:"#0f172a"}}>{v}</div></div>
+              ))}
+            </div>
+            {triageData.chief_complaint&&<div style={{marginTop:"8px",padding:"8px 12px",borderRadius:"8px",background:"white",border:"1px solid #f0f0f0",fontSize:"12px"}}><span style={{fontWeight:"700",color:"#555"}}>Chief Complaint: </span>{triageData.chief_complaint}</div>}
+            {triageData.allergies&&<div style={{marginTop:"6px",padding:"8px 12px",borderRadius:"8px",background:"#fef2f2",border:"1px solid #fecaca",fontSize:"12px",color:"#dc2626",fontWeight:"700"}}>⚠️ ALLERGY ALERT: {triageData.allergies}</div>}
+          </div>
+        </>}
+      </Card>
+
+      <Card style={{padding:"20px",marginBottom:"14px"}}>
+        <div style={{fontSize:"15px",fontWeight:"800",color:"#0f172a",marginBottom:"14px"}}>Clinical Assessment</div>
+        <div style={{display:"flex",flexDirection:"column",gap:"12px"}}>
+          <Textarea label="History of Present Illness" value={consult.hpi} onChange={v=>setConsult(p=>({...p,hpi:v}))} placeholder="Onset, duration, severity, progression, associated symptoms..." rows={4}/>
+          <Textarea label="Physical Examination Findings" value={consult.exam} onChange={v=>setConsult(p=>({...p,exam:v}))} placeholder="General appearance, systemic examination..." rows={3}/>
+          <Inp label="Primary Diagnosis *" value={consult.dx1} onChange={v=>setConsult(p=>({...p,dx1:v}))} placeholder="e.g. Hypertensive crisis, Malaria, Peptic Ulcer Disease" required/>
+          <Inp label="Secondary Diagnosis (optional)" value={consult.dx2} onChange={v=>setConsult(p=>({...p,dx2:v}))} placeholder="Additional diagnosis..."/>
+          <Textarea label="Clinical Notes" value={consult.notes} onChange={v=>setConsult(p=>({...p,notes:v}))} placeholder="Additional observations and notes..." rows={2}/>
+          <Inp label="Doctor Name" value={consult.doctorName} onChange={v=>setConsult(p=>({...p,doctorName:v}))} placeholder="Your name"/>
+        </div>
+      </Card>
+
+      <Card style={{padding:"20px",marginBottom:"14px"}}>
+        <div style={{fontSize:"15px",fontWeight:"800",color:"#0f172a",marginBottom:"14px"}}>Prescription — Sends to Pharmacy</div>
+        <div style={{position:"relative",marginBottom:"12px"}}>
+          <input value={medSearch} onChange={e=>setMedSearch(e.target.value)} placeholder="Search medicines from inventory..."
+            style={{width:"100%",padding:"9px 12px",borderRadius:"10px",border:"1px solid #e5e7eb",fontSize:"13px",outline:"none",boxSizing:"border-box"}}/>
+          {medSearch&&medResults.length>0&&<div style={{position:"absolute",top:"100%",left:0,right:0,background:"white",border:"1px solid #e5e7eb",borderRadius:"10px",boxShadow:"0 4px 16px rgba(0,0,0,0.1)",zIndex:10,marginTop:"4px",overflow:"hidden"}}>
+            {medResults.map(m=><button key={m.id} onClick={()=>addMed(m)} style={{width:"100%",padding:"10px 14px",border:"none",background:"white",cursor:"pointer",textAlign:"left",borderBottom:"1px solid #f5f5f5",display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+              <div><div style={{fontWeight:"700",fontSize:"13px"}}>{m.emoji} {m.name}</div><div style={{fontSize:"11px",color:"#888"}}>{m.genericName||""} · {m.stock} in stock</div></div>
+              <span style={{color:TEALC,fontWeight:"700",fontSize:"12px"}}>+ Add</span>
+            </button>)}
+          </div>}
+        </div>
+        {meds.length===0?<div style={{textAlign:"center",padding:"16px",color:"#ddd",fontSize:"13px",border:"1px dashed #e5e7eb",borderRadius:"10px"}}>Search and add medicines above</div>
+        :meds.map((med,idx)=>(
+          <div key={idx} style={{padding:"12px",borderRadius:"12px",border:"1px solid #e5e7eb",marginBottom:"10px",background:"#fafafa"}}>
+            <div style={{display:"flex",justifyContent:"space-between",marginBottom:"8px"}}><div style={{fontWeight:"700",fontSize:"13px"}}>{med.emoji} {med.name}</div><button onClick={()=>setMeds(prev=>prev.filter((_,i)=>i!==idx))} style={{background:"none",border:"none",cursor:"pointer",color:"#ef4444",fontWeight:"700",fontSize:"12px"}}>Remove</button></div>
+            <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"8px"}}>
+              <Inp label="Dose" value={med.dose} onChange={v=>updMed(idx,"dose",v)} placeholder="e.g. 500mg"/>
+              <Inp label="Frequency" value={med.freq} onChange={v=>updMed(idx,"freq",v)} placeholder="e.g. Twice daily"/>
+              <Inp label="Duration" value={med.dur} onChange={v=>updMed(idx,"dur",v)} placeholder="e.g. 5 days"/>
+              <Sel label="Route" value={med.route} onChange={v=>updMed(idx,"route",v)} options={["Oral","IV","IM","SC","Topical","Inhalation","Sublingual","Rectal","Other"]}/>
+            </div>
+            <div style={{marginTop:"8px"}}><Inp label="Instructions" value={med.instructions} onChange={v=>updMed(idx,"instructions",v)} placeholder="e.g. Take after meals"/></div>
+          </div>
+        ))}
+        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"12px",marginTop:"10px"}}>
+          <Textarea label="Laboratory Tests" value={consult.labTests} onChange={v=>setConsult(p=>({...p,labTests:v}))} placeholder="FBC, LFT, RFT, Malaria RDT..." rows={2}/>
+          <Textarea label="Imaging Requests" value={consult.imaging} onChange={v=>setConsult(p=>({...p,imaging:v}))} placeholder="Chest X-ray, Abdominal USS..." rows={2}/>
+        </div>
+        <div style={{marginTop:"10px"}}><Textarea label="Prescription Notes" value={consult.prescNotes} onChange={v=>setConsult(p=>({...p,prescNotes:v}))} placeholder="Special instructions for pharmacist..." rows={2}/></div>
+      </Card>
+
+      <Card style={{padding:"20px",marginBottom:"14px"}}>
+        <div style={{fontSize:"15px",fontWeight:"800",color:"#0f172a",marginBottom:"14px"}}>Disposition & Follow-up</div>
+        <div>
+          <div style={{fontSize:"11px",fontWeight:"700",color:"#666",marginBottom:"8px"}}>Patient Disposition</div>
+          <div style={{display:"flex",gap:"8px",flexWrap:"wrap",marginBottom:"12px"}}>
+            {["Discharge","Admit","Refer to Specialist","Emergency Transfer"].map(v=>(
+              <label key={v} style={{display:"flex",alignItems:"center",gap:"6px",padding:"7px 12px",borderRadius:"8px",border:"1px solid"+(consult.disposition===v?TEALC:"#e5e7eb"),background:consult.disposition===v?"#f0fdfa":"white",cursor:"pointer",fontSize:"13px"}}>
+                <input type="radio" checked={consult.disposition===v} onChange={()=>setConsult(p=>({...p,disposition:v}))} style={{accentColor:TEALC}}/>{v}
+              </label>
+            ))}
+          </div>
+        </div>
+        {consult.disposition==="Admit"&&<Inp label="Ward / Bed" value={consult.ward} onChange={v=>setConsult(p=>({...p,ward:v}))} placeholder="e.g. Male Medical Ward, Bed 5"/>}
+        {consult.disposition==="Refer to Specialist"&&<div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"12px",marginBottom:"12px"}}>
+          <Inp label="Referral Destination" value={consult.refDest} onChange={v=>setConsult(p=>({...p,refDest:v}))} placeholder="e.g. LUTH Cardiology"/>
+          <Textarea label="Reason" value={consult.refReason} onChange={v=>setConsult(p=>({...p,refReason:v}))} rows={2}/>
+        </div>}
+        <Textarea label="Patient Counselling & Instructions" value={consult.counselling} onChange={v=>setConsult(p=>({...p,counselling:v}))} placeholder="Diet, lifestyle, medication compliance instructions..." rows={2}/>
+        <div style={{marginTop:"12px",display:"grid",gridTemplateColumns:"1fr 1fr",gap:"12px"}}>
+          <Inp label="Follow-up Date" value={consult.fuDate} onChange={v=>setConsult(p=>({...p,fuDate:v}))} type="date"/>
+          <Sel label="Follow-up Clinic" value={consult.fuClinic} onChange={v=>setConsult(p=>({...p,fuClinic:v}))} options={["Same Doctor","General OPD","Cardiology","Pediatrics","Surgery","Other"]}/>
+        </div>
+        {consult.fuDate&&<div style={{marginTop:"8px",padding:"8px 12px",borderRadius:"8px",background:"#f0fdfa",fontSize:"12px",color:TEALC}}>🔔 Follow-up reminder will be set for {consult.fuDate}</div>}
+      </Card>
+
+      <button onClick={sendToPharmacy} disabled={saving}
+        style={{width:"100%",padding:"14px",borderRadius:"12px",border:"none",background:TEAL,color:"white",fontWeight:"800",fontSize:"15px",cursor:"pointer",opacity:saving?0.7:1}}>
+        {saving?"Saving...":(meds.length>0?"Save & Send Prescription to Pharmacy →":"Save Consultation & Discharge →")}
+      </button>
+    </div>
+  );
+
+  if(done) return (
+    <div style={{textAlign:"center",padding:"40px 20px"}}>
+      <div style={{fontSize:"56px",marginBottom:"16px"}}>✅</div>
+      <div style={{fontSize:"22px",fontWeight:"900",marginBottom:"8px"}}>Consultation Saved!</div>
+      <div style={{fontSize:"14px",color:"#888",marginBottom:"12px"}}>Patient: <strong>{selected.full_name}</strong></div>
+      {sentTo==="pharmacy"&&<div style={{display:"inline-flex",alignItems:"center",gap:"8px",padding:"8px 16px",borderRadius:"20px",background:"#f0fdfa",border:"1px solid #ccfbf1",fontSize:"13px",color:TEALC,fontWeight:"700",marginBottom:"24px"}}>
+        💊 Prescription sent to Pharmacy — Pharmacist can now see and dispense
+      </div>}
+      {sentTo==="discharged"&&<div style={{display:"inline-flex",alignItems:"center",gap:"8px",padding:"8px 16px",borderRadius:"20px",background:"#f0fdf4",border:"1px solid #bbf7d0",fontSize:"13px",color:"#059669",fontWeight:"700",marginBottom:"24px"}}>
+        ✅ Patient discharged successfully
+      </div>}
+      <div style={{display:"flex",gap:"10px",justifyContent:"center"}}><TealBtn onClick={()=>{setSelected(null);setDone(false);setTriageData(null);loadPatients();}}>Back to Patient List</TealBtn></div>
+    </div>
+  );
+
+  return (
+    <div>
+      <SectionHead title="Doctor Consultation" sub="Patients waiting to see doctor"/>
+      {loading?<div style={{textAlign:"center",padding:"40px",color:"#aaa"}}>⏳ Loading...</div>
+      :patients.length===0
+        ?<div style={{textAlign:"center",padding:"60px",color:"#ccc"}}><div style={{fontSize:"40px",marginBottom:"12px"}}>👨‍⚕️</div><div>No patients waiting for doctor</div><div style={{fontSize:"12px",marginTop:"8px"}}>Patients appear here after triage is complete</div></div>
+        :<div style={{display:"flex",flexDirection:"column",gap:"12px"}}>
+          {patients.map(p=>(
+            <Card key={p.id} style={{padding:"18px",display:"flex",alignItems:"center",justifyContent:"space-between",gap:"12px",flexWrap:"wrap"}}>
+              <div style={{display:"flex",alignItems:"center",gap:"14px"}}>
+                <Avatar name={p.full_name} size={44} bg="linear-gradient(135deg,#7c3aed,#a78bfa)"/>
+                <div>
+                  <div style={{fontWeight:"800",fontSize:"15px"}}>{p.full_name}</div>
+                  <div style={{fontSize:"12px",color:"#888",marginTop:"2px"}}>{p.reg_no} · {p.phone}</div>
+                  <div style={{fontSize:"12px",color:"#888",marginTop:"2px"}}>{p.department||"General OPD"} · {p.assigned_doctor||"No doctor assigned"}</div>
+                </div>
+              </div>
+              <div style={{display:"flex",alignItems:"center",gap:"10px"}}>
+                <StatusBadge status={p.status}/>
+                <TealBtn onClick={()=>openPatient(p)}>Open File</TealBtn>
+              </div>
+            </Card>
+          ))}
+        </div>}
+    </div>
+  );
+}
+
+// ── PHARMACY PRESCRIPTION INBOX ───────────────────────────────────────────────
+function PrescriptionInbox({ brand, products }) {
+  const [prescriptions,setPrescriptions]=useState([]);
+  const [loading,setLoading]=useState(true);
+  const [selected,setSelected]=useState(null);
+  const [dispensing,setDispensing]=useState(false);
+  const [toast,setToast]=useState("");
+  const showToast=msg=>{setToast(msg);setTimeout(()=>setToast(""),3000);};
+
+  useEffect(()=>{ loadPrescriptions(); const t=setInterval(loadPrescriptions,20000); return()=>clearInterval(t); },[]);
+
+  async function loadPrescriptions() {
+    try { const p=await dbGetPrescriptions(brand.id); setPrescriptions(p||[]); } catch(e){}
+    setLoading(false);
+  }
+
+  async function markDispensed(id, patientId) {
+    setDispensing(true);
+    try {
+      await dbUpdatePrescriptionStatus(id, "dispensed");
+      await dbUpdatePatientStatus(patientId, "discharged");
+      showToast("Prescription dispensed!");
+      loadPrescriptions();
+      setSelected(null);
+    } catch(e){ showToast("Error. Please try again."); }
+    setDispensing(false);
+  }
+
+  const pending = prescriptions.filter(p=>p.status==="pending");
+  const dispensed = prescriptions.filter(p=>p.status==="dispensed");
+
+  if(selected) {
+    let meds=[];
+    try{ meds=JSON.parse(selected.medicines||"[]"); }catch(e){}
+    return(
+      <div>
+        <div style={{display:"flex",alignItems:"center",gap:"12px",marginBottom:"20px"}}>
+          <button onClick={()=>setSelected(null)} style={{width:"36px",height:"36px",borderRadius:"10px",background:"white",border:"1px solid #e5e7eb",cursor:"pointer",fontSize:"18px",display:"flex",alignItems:"center",justifyContent:"center"}}>←</button>
+          <div><div style={{fontWeight:"900",fontSize:"18px",color:"#0f172a"}}>Prescription Details</div><div style={{fontSize:"12px",color:"#aaa"}}>Patient: {selected.patient_name}</div></div>
+        </div>
+        <div style={{padding:"10px 14px",borderRadius:"10px",background:"#f0fdfa",border:"1px solid #ccfbf1",fontSize:"12px",color:TEALC,fontWeight:"600",marginBottom:"16px"}}>
+          💊 Pharmacy Module — Prescription received from Doctor
+        </div>
+        <Card style={{padding:"16px",marginBottom:"14px",background:"#fafafa"}}>
+          <div style={{fontSize:"12px",fontWeight:"700",color:"#555",marginBottom:"8px"}}>Prescription Info</div>
+          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"8px"}}>
+            {[["Patient",selected.patient_name],["Doctor",selected.doctor_name||"—"],["Date",selected.created_at?selected.created_at.split("T")[0]:"—"],["Status",selected.status]].map(([l,v])=>(
+              <div key={l}><div style={{fontSize:"10px",color:"#aaa",fontWeight:"700"}}>{l}</div><div style={{fontSize:"12px",fontWeight:"600",color:"#0f172a"}}>{v}</div></div>
+            ))}
+          </div>
+        </Card>
+        <Card style={{padding:"16px",marginBottom:"14px"}}>
+          <div style={{fontSize:"14px",fontWeight:"800",color:"#0f172a",marginBottom:"12px"}}>Prescribed Medicines</div>
+          {meds.length===0?<div style={{color:"#aaa",fontSize:"13px"}}>No medicines prescribed</div>
+          :meds.map((med,i)=>(
+            <div key={i} style={{padding:"12px",borderRadius:"10px",border:"1px solid #f0f0f0",marginBottom:"8px",background:"#fafafa"}}>
+              <div style={{fontWeight:"700",fontSize:"14px",marginBottom:"6px"}}>{med.emoji||"💊"} {med.name}</div>
+              <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"4px"}}>
+                {[["Dose",med.dose],["Frequency",med.freq],["Duration",med.dur],["Route",med.route]].filter(([,v])=>v).map(([l,v])=>(
+                  <div key={l} style={{fontSize:"12px"}}><span style={{color:"#888",fontWeight:"600"}}>{l}: </span><span style={{color:"#0f172a"}}>{v}</span></div>
+                ))}
+              </div>
+              {med.instructions&&<div style={{fontSize:"12px",color:"#555",marginTop:"6px",padding:"6px 8px",borderRadius:"6px",background:"white",border:"1px solid #f0f0f0"}}>📋 {med.instructions}</div>}
+              {/* Check stock */}
+              {(()=>{const prod=products.find(p=>p.id===med.id||p.name===med.name);return prod&&prod.stock<=0?<div style={{marginTop:"6px",padding:"6px 8px",borderRadius:"6px",background:"#fef2f2",fontSize:"12px",color:"#dc2626",fontWeight:"700"}}>⚠️ OUT OF STOCK — Mark as unavailable</div>:null;})()}
+            </div>
+          ))}
+        </Card>
+        {selected.lab_tests&&<Card style={{padding:"16px",marginBottom:"14px"}}><div style={{fontSize:"14px",fontWeight:"800",marginBottom:"8px"}}>Lab Tests Ordered</div><div style={{fontSize:"13px",color:"#555"}}>{selected.lab_tests}</div></Card>}
+        {selected.imaging&&<Card style={{padding:"16px",marginBottom:"14px"}}><div style={{fontSize:"14px",fontWeight:"800",marginBottom:"8px"}}>Imaging Ordered</div><div style={{fontSize:"13px",color:"#555"}}>{selected.imaging}</div></Card>}
+        {selected.notes&&<Card style={{padding:"16px",marginBottom:"14px"}}><div style={{fontSize:"14px",fontWeight:"800",marginBottom:"8px"}}>Doctor Notes</div><div style={{fontSize:"13px",color:"#555"}}>{selected.notes}</div></Card>}
+        {selected.status==="pending"&&(
+          <button onClick={()=>markDispensed(selected.id, selected.patient_id)} disabled={dispensing}
+            style={{width:"100%",padding:"14px",borderRadius:"12px",border:"none",background:TEAL,color:"white",fontWeight:"800",fontSize:"15px",cursor:"pointer",opacity:dispensing?0.7:1}}>
+            {dispensing?"Saving...":"Mark as Dispensed ✓"}
+          </button>
+        )}
+        {selected.status==="dispensed"&&<div style={{padding:"14px",borderRadius:"12px",background:"#f0fdf4",border:"1px solid #bbf7d0",textAlign:"center",fontSize:"14px",fontWeight:"700",color:"#059669"}}>✅ Already Dispensed</div>}
+        <Toast msg={toast}/>
+      </div>
+    );
+  }
+
+  return (
+    <div>
+      <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:"20px",flexWrap:"wrap",gap:"10px"}}>
+        <div><div style={{fontSize:"20px",fontWeight:"900",color:"#111"}}>Prescription Inbox</div><div style={{fontSize:"13px",color:"#888",marginTop:"3px"}}>Prescriptions received from doctors</div></div>
+        <button onClick={loadPrescriptions} style={{padding:"8px 16px",borderRadius:"10px",border:"1px solid #e5e7eb",background:"white",color:TEALC,fontWeight:"700",fontSize:"13px",cursor:"pointer"}}>🔄 Refresh</button>
+      </div>
+      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"14px",marginBottom:"20px"}}>
+        <StatCard icon="💊" label="Pending Dispensing" value={pending.length} alert={pending.length>0}/>
+        <StatCard icon="✅" label="Dispensed Today" value={dispensed.length}/>
+      </div>
+      {pending.length>0&&<div style={{marginBottom:"16px",padding:"14px 18px",borderRadius:"14px",background:"#f0fdfa",border:"1px solid #ccfbf1",display:"flex",alignItems:"center",gap:"12px"}}>
+        <span style={{fontSize:"20px"}}>🔔</span>
+        <div><div style={{fontWeight:"700",color:TEALC,fontSize:"14px"}}>{pending.length} prescription{pending.length>1?"s":""} waiting to be dispensed!</div><div style={{fontSize:"12px",color:"#555",marginTop:"2px"}}>{pending.map(p=>p.patient_name).join(" · ")}</div></div>
+      </div>}
+      {loading?<div style={{textAlign:"center",padding:"40px",color:"#aaa"}}>⏳ Loading...</div>
+      :prescriptions.length===0
+        ?<div style={{textAlign:"center",padding:"60px",color:"#ccc"}}><div style={{fontSize:"40px",marginBottom:"12px"}}>💊</div><div>No prescriptions yet</div><div style={{fontSize:"12px",marginTop:"8px"}}>Prescriptions appear here when a doctor sends them</div></div>
+        :<div style={{display:"flex",flexDirection:"column",gap:"10px"}}>
+          {prescriptions.map(p=>{
+            let medCount=0;try{medCount=JSON.parse(p.medicines||"[]").length;}catch(e){}
+            return(
+              <Card key={p.id} style={{padding:"16px",cursor:"pointer",border:p.status==="pending"?"1px solid #ccfbf1":"1px solid #f0f0f0"}} onClick={()=>setSelected(p)}>
+                <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:"12px"}}>
+                  <div style={{display:"flex",alignItems:"center",gap:"12px"}}>
+                    <div style={{width:"44px",height:"44px",borderRadius:"12px",background:p.status==="pending"?"#f0fdfa":"#f3f4f6",display:"flex",alignItems:"center",justifyContent:"center",fontSize:"22px"}}>💊</div>
+                    <div>
+                      <div style={{fontWeight:"800",fontSize:"14px"}}>{p.patient_name}</div>
+                      <div style={{fontSize:"12px",color:"#888",marginTop:"2px"}}>Dr. {p.doctor_name||"Unknown"} · {medCount} medicine{medCount!==1?"s":""}</div>
+                      <div style={{fontSize:"11px",color:"#aaa",marginTop:"2px"}}>{p.created_at?p.created_at.split("T")[0]:""}</div>
+                    </div>
+                  </div>
+                  <div style={{display:"flex",flexDirection:"column",alignItems:"flex-end",gap:"6px"}}>
+                    <Pill label={p.status==="pending"?"Pending":"Dispensed"} type={p.status==="pending"?"amber":"green"}/>
+                    <span style={{fontSize:"12px",color:TEALC,fontWeight:"600"}}>View →</span>
+                  </div>
+                </div>
+              </Card>
+            );
+          })}
+        </div>}
+      <Toast msg={toast}/>
+    </div>
+  );
+}
+
+
 // ── HOSPITAL CONSULTATION ─────────────────────────────────────────────────────
 function HospitalConsultation({ onClose }) {
   const [step,setStep]=useState(1);const [saved,setSaved]=useState(false);
@@ -1389,11 +2078,15 @@ function ConsultationPage({ businessType, products }) {
 }
 
 // BUSINESS DASHBOARD
-const NAV_ITEMS=[["dashboard","🏠","Dashboard"],["appointments","📅","Appointments"],["consultation","📋","Consultations"],["clients","👥","Clients"],["pos","🛒","POS / Sales"],["inventory","📦","Inventory"],["carefind","🔍","CareFind Profile"],["expenses","💸","Expenses"],["debts","🏦","Debts"],["reports","📊","Reports"],["settings","⚙️","Settings"]];
+const NAV_ITEMS_DEFAULT=[["dashboard","🏠","Dashboard"],["appointments","📅","Appointments"],["consultation","📋","Consultations"],["clients","👥","Clients"],["pos","🛒","POS / Sales"],["inventory","📦","Inventory"],["carefind","🔍","CareFind Profile"],["expenses","💸","Expenses"],["debts","🏦","Debts"],["reports","📊","Reports"],["settings","⚙️","Settings"]];
+const NAV_ITEMS_HOSPITAL=[["dashboard","🏠","Dashboard"],["reception","👩‍💼","Reception"],["triage","🏥","Triage"],["doctor","👨‍⚕️","Doctor"],["rx_inbox","💊","Prescription Inbox"],["inventory","📦","Inventory"],["carefind","🔍","CareFind Profile"],["expenses","💸","Expenses"],["debts","🏦","Debts"],["reports","📊","Reports"],["settings","⚙️","Settings"]];
+const NAV_ITEMS=[];
 
 function BusinessDashboard({ brand, onLogout }) {
   const [page,setPage]=useState("dashboard");const [products,setProducts]=useState(INIT_PRODUCTS);const [toast,setToast]=useState("");
   const bType=(brand.business_type||brand.type||"skincare");const bIcon=businessIcon(bType);
+  const isHospital=bType==="hospital";
+  const navItems=isHospital?NAV_ITEMS_HOSPITAL:NAV_ITEMS_DEFAULT;
 
   const renderPage=()=>{
     switch(page){
@@ -1409,36 +2102,68 @@ function BusinessDashboard({ brand, onLogout }) {
               {(brand.visible_on_carefind||brand.visibleOnCareFind)&&<div style={{display:"inline-flex",alignItems:"center",gap:"6px",padding:"4px 12px",borderRadius:"20px",background:"rgba(20,184,166,0.2)",fontSize:"12px",color:"#14b8a6",fontWeight:"600"}}>🔍 Live on CareFind</div>}
             </div>
           </div>
-          <div style={{display:"grid",gridTemplateColumns:"repeat(2,1fr)",gap:"14px"}}>
-            <StatCard icon="👥" label="Total Clients" value="124" sub="+8 this month"/>
-            <StatCard icon="📅" label="Today's Appointments" value="7" sub="3 confirmed"/>
-            <StatCard icon="💰" label="Monthly Revenue" value="₦284,500" sub="+12% vs last month"/>
-            <StatCard icon="🔍" label="Products on CareFind" value={products.filter(p=>p.listOnCareFind&&p.stock>0).length} sub="Visible to patients searching nearby"/>
-          </div>
-          {/* CareFind quick status */}
-          {(brand.visible_on_carefind||brand.visibleOnCareFind)&&(
-            <div style={{padding:"16px 20px",borderRadius:"14px",background:"#f0fdfa",border:"1px solid #ccfbf1",display:"flex",alignItems:"center",gap:"16px",flexWrap:"wrap"}}>
-              <div style={{fontSize:"24px"}}>🔍</div>
-              <div style={{flex:1}}>
-                <div style={{fontWeight:"700",color:TEALC,fontSize:"14px"}}>Your business is live on CareFind</div>
-                <div style={{fontSize:"12px",color:"#555",marginTop:"2px"}}>{products.filter(p=>p.listOnCareFind&&p.stock>0).length} products visible · {products.filter(p=>p.listOnCareFind&&p.stock<=0).length} out of stock · WhatsApp: {brand.whatsapp}</div>
+          {isHospital?(
+            <>
+              <div style={{display:"grid",gridTemplateColumns:"repeat(2,1fr)",gap:"14px"}}>
+                <div onClick={()=>setPage("reception")} style={{cursor:"pointer"}}><StatCard icon="👩‍💼" label="Reception" value="Register" sub="Tap to register new patient"/></div>
+                <div onClick={()=>setPage("triage")} style={{cursor:"pointer"}}><StatCard icon="🏥" label="Triage" value="Vitals" sub="Patients from Reception"/></div>
+                <div onClick={()=>setPage("doctor")} style={{cursor:"pointer"}}><StatCard icon="👨‍⚕️" label="Doctor" value="Consult" sub="Patients from Triage"/></div>
+                <div onClick={()=>setPage("rx_inbox")} style={{cursor:"pointer"}}><StatCard icon="💊" label="Pharmacy Inbox" value="Rx" sub="Prescriptions from Doctors" alert/></div>
               </div>
-              <button onClick={()=>setPage("carefind")} style={{padding:"8px 16px",borderRadius:"10px",border:"none",background:TEAL,color:"white",fontWeight:"700",fontSize:"12px",cursor:"pointer"}}>Manage CareFind →</button>
-            </div>
+              <div style={{padding:"20px",borderRadius:"16px",background:"#f0fdfa",border:"1px solid #ccfbf1"}}>
+                <div style={{fontWeight:"800",fontSize:"15px",marginBottom:"14px",color:"#0f172a"}}>Hospital Patient Flow</div>
+                <div style={{display:"flex",alignItems:"center",gap:"6px",flexWrap:"wrap",fontSize:"12px"}}>
+                  {[["👩‍💼","Reception"],["→",""],["🏥","Triage"],["→",""],["👨‍⚕️","Doctor"],["→",""],["💊","Pharmacy"]].map((item,i)=>(
+                    item[0]==="→"
+                      ?<span key={i} style={{color:"#aaa",fontSize:"16px",fontWeight:"700"}}>→</span>
+                      :<div key={i} style={{padding:"10px 14px",borderRadius:"10px",background:"white",border:"1px solid #ccfbf1",textAlign:"center",cursor:"pointer"}} onClick={()=>setPage(item[0]==="👩‍💼"?"reception":item[0]==="🏥"?"triage":item[0]==="👨‍⚕️"?"doctor":"rx_inbox")}>
+                        <div style={{fontSize:"22px",marginBottom:"4px"}}>{item[0]}</div>
+                        <div style={{fontWeight:"700",fontSize:"12px",color:"#0f172a"}}>{item[1]}</div>
+                      </div>
+                  ))}
+                </div>
+                <div style={{marginTop:"14px",fontSize:"12px",color:"#555",lineHeight:"1.7"}}>
+                  Each department sees only what they need. Patient data flows automatically — no duplicate entry needed.
+                </div>
+              </div>
+            </>
+          ):(
+            <>
+              <div style={{display:"grid",gridTemplateColumns:"repeat(2,1fr)",gap:"14px"}}>
+                <StatCard icon="👥" label="Total Clients" value="124" sub="+8 this month"/>
+                <StatCard icon="📅" label="Today's Appointments" value="7" sub="3 confirmed"/>
+                <StatCard icon="💰" label="Monthly Revenue" value="284,500" sub="+12% vs last month"/>
+                <StatCard icon="🔍" label="Products on CareFind" value={products.filter(p=>p.listOnCareFind&&p.stock>0).length} sub="Visible to patients nearby"/>
+              </div>
+              {(brand.visible_on_carefind||brand.visibleOnCareFind)&&(
+                <div style={{padding:"16px 20px",borderRadius:"14px",background:"#f0fdfa",border:"1px solid #ccfbf1",display:"flex",alignItems:"center",gap:"16px",flexWrap:"wrap"}}>
+                  <div style={{fontSize:"24px"}}>🔍</div>
+                  <div style={{flex:1}}>
+                    <div style={{fontWeight:"700",color:TEALC,fontSize:"14px"}}>Your business is live on CareFind</div>
+                    <div style={{fontSize:"12px",color:"#555",marginTop:"2px"}}>{products.filter(p=>p.listOnCareFind&&p.stock>0).length} products visible · WhatsApp: {brand.whatsapp||"Not set"}</div>
+                  </div>
+                  <button onClick={()=>setPage("carefind")} style={{padding:"8px 16px",borderRadius:"10px",border:"none",background:TEAL,color:"white",fontWeight:"700",fontSize:"12px",cursor:"pointer"}}>Manage CareFind</button>
+                </div>
+              )}
+              <Card>
+                <div style={{padding:"16px 20px",borderBottom:"1px solid #f5f5f5",fontWeight:"800",fontSize:"15px"}}>Today's Appointments</div>
+                {APPOINTMENTS.map(a=>(
+                  <div key={a.id} style={{display:"flex",alignItems:"center",gap:"12px",padding:"10px 20px",borderBottom:"1px solid #f9f9f9"}}>
+                    <Avatar name={a.client} size={34}/>
+                    <div style={{flex:1}}><div style={{fontSize:"13px",fontWeight:"700"}}>{a.client}</div><div style={{fontSize:"11px",color:"#aaa"}}>{a.service} · {a.staff}</div></div>
+                    <div style={{textAlign:"right"}}><div style={{fontSize:"12px",fontWeight:"700",color:"#555"}}>{a.time}</div><Pill label={a.status} type={a.status==="confirmed"?"green":"amber"}/></div>
+                  </div>
+                ))}
+              </Card>
+            </>
           )}
-          <Card>
-            <div style={{padding:"16px 20px",borderBottom:"1px solid #f5f5f5",fontWeight:"800",fontSize:"15px"}}>Today's Appointments</div>
-            {APPOINTMENTS.map(a=>(
-              <div key={a.id} style={{display:"flex",alignItems:"center",gap:"12px",padding:"10px 20px",borderBottom:"1px solid #f9f9f9"}}>
-                <Avatar name={a.client} size={34}/>
-                <div style={{flex:1}}><div style={{fontSize:"13px",fontWeight:"700"}}>{a.client}</div><div style={{fontSize:"11px",color:"#aaa"}}>{a.service} · {a.staff}</div></div>
-                <div style={{textAlign:"right"}}><div style={{fontSize:"12px",fontWeight:"700",color:"#555"}}>{a.time}</div><Pill label={a.status} type={a.status==="confirmed"?"green":"amber"}/></div>
-              </div>
-            ))}
-          </Card>
         </div>
       );
       case "consultation":return<ConsultationPage businessType={bType} products={products}/>;
+      case "reception":return<ReceptionModule brand={brand} onPatientSent={()=>{}}/>;
+      case "triage":return<TriageModule brand={brand}/>;
+      case "doctor":return<DoctorModule brand={brand} products={products}/>;
+      case "rx_inbox":return<PrescriptionInbox brand={brand} products={products}/>;
       case "pos":return<div style={{height:"calc(100vh - 60px)",display:"flex",flexDirection:"column"}}><InlinePOS products={products} setProducts={setProducts}/></div>;
       case "inventory":return<InventoryPage products={products} setProducts={setProducts} brand={brand}/>;
       case "carefind":return<PublicProfilePage brand={brand} products={products}/>;
@@ -1448,7 +2173,7 @@ function BusinessDashboard({ brand, onLogout }) {
       case "debts":return(<div><SectionHead title="Debt Management" sub="Track money owed" btn="+ Record Debt"/><div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"14px",marginBottom:"20px"}}><Card style={{padding:"18px",borderLeft:"4px solid #059669"}}><div style={{fontSize:"12px",color:"#888",fontWeight:"600"}}>Clients Owe You</div><div style={{fontSize:"24px",fontWeight:"900",marginTop:"4px"}}>₦23,500</div></Card><Card style={{padding:"18px",borderLeft:"4px solid #ef4444"}}><div style={{fontSize:"12px",color:"#888",fontWeight:"600"}}>You Owe Suppliers</div><div style={{fontSize:"24px",fontWeight:"900",marginTop:"4px"}}>₦45,000</div></Card></div><Card><div style={{overflowX:"auto"}}><table style={{width:"100%",borderCollapse:"collapse"}}><thead><tr style={{borderBottom:"1px solid #f5f5f5",background:"#fafafa"}}>{["Direction","Party","Amount","Due","Status"].map(h=><th key={h} style={{padding:"12px 16px",textAlign:"left",fontSize:"11px",fontWeight:"700",color:"#aaa",textTransform:"uppercase"}}>{h}</th>)}</tr></thead><tbody>{DEBTS.map(d=><tr key={d.id} style={{borderBottom:"1px solid #f9f9f9"}}><td style={{padding:"12px 16px"}}><Pill label={d.dir==="owes_us"?"↓ Owed to us":"↑ We owe"} type={d.dir==="owes_us"?"green":"red"}/></td><td style={{padding:"12px 16px",fontSize:"13px",fontWeight:"700"}}>{d.party}</td><td style={{padding:"12px 16px",fontSize:"13px",fontWeight:"900"}}>{fmt(d.amount)}</td><td style={{padding:"12px 16px",fontSize:"12px",color:"#aaa"}}>{d.due}</td><td style={{padding:"12px 16px"}}><Pill label={d.status} type={d.status==="overdue"?"red":"amber"}/></td></tr>)}</tbody></table></div></Card></div>);
       case "reports":return(<div><SectionHead title="Reports & Analytics"/><div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:"14px",marginBottom:"20px"}}><StatCard icon="💰" label="Total Revenue" value="₦1,389,500"/><StatCard icon="💸" label="Total Expenses" value="₦935,000"/><StatCard icon="📈" label="Net Profit" value="₦454,500"/></div><Card style={{padding:"24px",marginBottom:"20px"}}><div style={{fontWeight:"800",fontSize:"16px",marginBottom:"20px"}}>Revenue vs Expenses (6 months)</div>{["Jan","Feb","Mar","Apr","May","Jun"].map((m,i)=>{const rev=[180000,210000,195000,250000,270000,284500];const exp=[120000,135000,140000,160000,180000,200000];return<div key={m} style={{display:"flex",alignItems:"center",gap:"12px",marginBottom:"12px"}}><span style={{width:"28px",fontSize:"12px",color:"#aaa"}}>{m}</span><div style={{flex:1}}><div style={{display:"flex",alignItems:"center",gap:"8px",marginBottom:"3px"}}><div style={{height:"8px",borderRadius:"4px",background:TEAL,width:((rev[i]/284500)*100)+"%",minWidth:"4px"}}/><span style={{fontSize:"11px",color:"#888"}}>₦{(rev[i]/1000).toFixed(0)}k</span></div><div style={{display:"flex",alignItems:"center",gap:"8px"}}><div style={{height:"8px",borderRadius:"4px",background:"#fecaca",width:((exp[i]/284500)*100)+"%",minWidth:"4px"}}/><span style={{fontSize:"11px",color:"#aaa"}}>₦{(exp[i]/1000).toFixed(0)}k</span></div></div></div>;})}  </Card><div style={{display:"flex",gap:"10px"}}>{["Export PDF","Export Excel","Print Report"].map(l=><GhostBtn key={l}>{l}</GhostBtn>)}</div></div>);
       case "settings":return(<div><SectionHead title="Settings"/><Card style={{padding:"28px",maxWidth:"520px"}}><div style={{marginBottom:"20px",padding:"14px",borderRadius:"12px",background:"#f0fdfa",border:"1px solid #ccfbf1",display:"flex",alignItems:"center",gap:"12px"}}><div style={{fontSize:"28px"}}>{bIcon}</div><div><div style={{fontWeight:"800",fontSize:"14px",color:"#0f172a"}}>{businessName(bType)}</div><div style={{fontSize:"12px",color:"#888",marginTop:"2px"}}>Your business type determines your consultation form</div></div></div>{[["Business Name",brand.name],["Owner Name",brand.owner],["Email",brand.email],["Phone",brand.phone],["WhatsApp",brand.whatsapp||""],["Business Hours",brand.hours||""],["Address",brand.address]].map(([l,v])=>(<div key={l} style={{marginBottom:"14px"}}><div style={{fontSize:"11px",fontWeight:"700",color:"#666",marginBottom:"6px"}}>{l}</div><input defaultValue={v} style={{width:"100%",padding:"10px 14px",borderRadius:"10px",border:"1px solid #e5e7eb",fontSize:"13px",outline:"none",boxSizing:"border-box"}}/></div>))}<Toggle label="Visible on CareFind" desc="Allow patients to find your business on the public CareFind search platform" value={(brand.visible_on_carefind||brand.visibleOnCareFind)||false} onChange={()=>{}}/><TealBtn style={{width:"100%",padding:"12px",marginTop:"16px"}}>Save Changes</TealBtn></Card></div>);
-      default:return(<div style={{display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",height:"60vh",textAlign:"center"}}><div style={{fontSize:"56px",marginBottom:"16px"}}>🔨</div><div style={{fontSize:"20px",fontWeight:"800",marginBottom:"8px"}}>{(NAV_ITEMS.find(n=>n[0]===page)||[])[2]||page}</div><div style={{fontSize:"14px",color:"#aaa"}}>Coming soon</div></div>);
+      default:return(<div style={{display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",height:"60vh",textAlign:"center"}}><div style={{fontSize:"56px",marginBottom:"16px"}}>🔨</div><div style={{fontSize:"20px",fontWeight:"800",marginBottom:"8px"}}>{(navItems.find(n=>n[0]===page)||[])[2]||page}</div><div style={{fontSize:"14px",color:"#aaa"}}>Coming soon</div></div>);
     }
   };
 
@@ -1462,7 +2187,7 @@ function BusinessDashboard({ brand, onLogout }) {
           </div>
         </div>
         <nav style={{flex:1,padding:"8px"}}>
-          {NAV_ITEMS.map(([id,icon,label])=>(
+          {navItems.map(([id,icon,label])=>(
             <button key={id} onClick={()=>setPage(id)} style={{width:"100%",display:"flex",alignItems:"center",gap:"8px",padding:"9px 10px",borderRadius:"10px",border:"none",cursor:"pointer",fontWeight:"600",fontSize:"12px",marginBottom:"1px",textAlign:"left",background:page===id?"rgba(20,184,166,0.15)":"transparent",color:page===id?"#14b8a6":"rgba(255,255,255,0.55)"}}>
               <span style={{fontSize:"15px"}}>{icon}</span>{label}
               {id==="carefind"&&(brand.visible_on_carefind||brand.visibleOnCareFind)&&<span style={{marginLeft:"auto",width:"6px",height:"6px",borderRadius:"50%",background:"#14b8a6",flexShrink:0}}/>}
@@ -1473,7 +2198,7 @@ function BusinessDashboard({ brand, onLogout }) {
       </div>
       <div style={{flex:1,display:"flex",flexDirection:"column",overflow:"hidden"}}>
         <div style={{background:"white",borderBottom:"1px solid #f0f0f0",padding:"12px 24px",display:"flex",alignItems:"center",justifyContent:"space-between",flexShrink:0}}>
-          <div style={{fontWeight:"800",fontSize:"16px",color:"#0f172a"}}>{(NAV_ITEMS.find(n=>n[0]===page)||[])[2]||page}</div>
+          <div style={{fontWeight:"800",fontSize:"16px",color:"#0f172a"}}>{(navItems.find(n=>n[0]===page)||[])[2]||page}</div>
           <div style={{display:"flex",alignItems:"center",gap:"12px"}}>
             <div style={{position:"relative"}}><button style={{width:"36px",height:"36px",borderRadius:"10px",background:"#f3f4f6",border:"none",cursor:"pointer",fontSize:"18px"}}>🔔</button><div style={{position:"absolute",top:"-4px",right:"-4px",width:"16px",height:"16px",borderRadius:"50%",background:"#ef4444",color:"white",fontSize:"9px",fontWeight:"900",display:"flex",alignItems:"center",justifyContent:"center"}}>3</div></div>
             <Avatar name={brand.owner} size={34}/>
