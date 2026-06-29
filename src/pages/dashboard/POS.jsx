@@ -1,4 +1,3 @@
-
 import { useState, useEffect } from 'react'
 import { addSale, updateSale, getSales, getTodaySales, getSettings, queueOfflineSale, getOfflineQueue, addDebt, updateDebt } from '../../lib/supabase'
 import { fmt, genId, todayDate, nowStr, TEAL, TEALC, DARK } from '../../lib/utils'
@@ -518,6 +517,9 @@ export default function POS({ brand, products, setProducts, role, perms }) {
   )
 
   // ── MAIN POS VIEW ────────────────────────────────────────────────────────────
+  const outOfStockItems = products.filter(p => (p.cat || p.category) !== 'Services' && p.stock <= 0)
+  const lowStockItems = products.filter(p => (p.cat || p.category) !== 'Services' && p.stock > 0 && p.stock <= (p.reorder_level || 5))
+
   return (
     <div style={{ display: 'flex', height: '100vh', overflow: 'hidden', flexDirection: 'column' }}>
       {/* Top bar with daily summary */}
@@ -541,6 +543,38 @@ export default function POS({ brand, products, setProducts, role, perms }) {
           ))}
         </div>
       </div>
+
+      {/* Stock Alert Banners — visible to ALL staff at POS */}
+      {outOfStockItems.length > 0 && (
+        <div style={{ background: '#fef2f2', borderBottom: '2px solid #fecaca', padding: '8px 14px', flexShrink: 0 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+            <span style={{ fontSize: '14px' }}>🔴</span>
+            <span style={{ fontWeight: '800', color: '#dc2626', fontSize: '12px' }}>OUT OF STOCK ({outOfStockItems.length}):</span>
+            <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
+              {outOfStockItems.map(p => (
+                <span key={p.id} style={{ padding: '2px 8px', borderRadius: '6px', background: '#fecaca', color: '#dc2626', fontSize: '11px', fontWeight: '700' }}>
+                  {p.emoji || '📦'} {p.name}
+                </span>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
+      {lowStockItems.length > 0 && (
+        <div style={{ background: '#fffbeb', borderBottom: '1px solid #fcd34d', padding: '6px 14px', flexShrink: 0 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+            <span style={{ fontSize: '14px' }}>🟡</span>
+            <span style={{ fontWeight: '700', color: '#d97706', fontSize: '11px' }}>LOW STOCK ({lowStockItems.length}):</span>
+            <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
+              {lowStockItems.map(p => (
+                <span key={p.id} style={{ padding: '2px 8px', borderRadius: '6px', background: '#fef3c7', color: '#d97706', fontSize: '11px', fontWeight: '600' }}>
+                  {p.emoji || '📦'} {p.name} ({p.stock} left)
+                </span>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
 
       <div style={{ display: 'flex', flex: 1, overflow: 'hidden' }}>
         {/* Products panel */}
