@@ -1,0 +1,159 @@
+const SB_URL = 'https://szdybxmgmhndoytqanfb.supabase.co'
+const SB_KEY = 'sb_publishable_xEs5f4L6qSxqXikPZM06SQ_TKy4UNFz'
+
+async function sbFetch(path, options = {}) {
+  const res = await fetch(SB_URL + '/rest/v1/' + path, {
+    method: options.method || 'GET',
+    headers: {
+      'apikey': SB_KEY,
+      'Authorization': 'Bearer ' + SB_KEY,
+      'Content-Type': 'application/json',
+      'Prefer': options.prefer || 'return=representation',
+    },
+    body: options.body || undefined,
+  })
+  const text = await res.text()
+  return text ? JSON.parse(text) : []
+}
+
+// AUTH
+export async function loginBusiness(email, password) {
+  const r = await sbFetch('businesses?email=eq.' + encodeURIComponent(email) + '&password=eq.' + encodeURIComponent(password) + '&select=*')
+  return r[0] || null
+}
+export async function loginStaff(email, password) {
+  const r = await sbFetch('staff?email=eq.' + encodeURIComponent(email) + '&password=eq.' + encodeURIComponent(password) + '&status=eq.active&select=*')
+  return r[0] || null
+}
+export async function getBusinessById(id) {
+  const r = await sbFetch('businesses?id=eq.' + id + '&select=*')
+  return r[0] || null
+}
+
+// BUSINESSES
+export async function getBusinesses() { return sbFetch('businesses?select=*&order=created_at.desc') }
+export async function registerBusiness(data) { return sbFetch('businesses', { method: 'POST', body: JSON.stringify(data) }) }
+export async function updateBusiness(id, data) { return sbFetch('businesses?id=eq.' + id, { method: 'PATCH', body: JSON.stringify(data), prefer: 'return=minimal' }) }
+export async function getBranches(parentId) { return sbFetch('businesses?parent_business_id=eq.' + parentId + '&select=*') }
+
+// STAFF
+export async function getStaff(businessId) { return sbFetch('staff?business_id=eq.' + businessId + '&order=created_at.desc&select=*') }
+export async function addStaff(data) { return sbFetch('staff', { method: 'POST', body: JSON.stringify(data) }) }
+export async function updateStaff(id, data) { return sbFetch('staff?id=eq.' + id, { method: 'PATCH', body: JSON.stringify(data), prefer: 'return=minimal' }) }
+export async function deleteStaff(id) { return sbFetch('staff?id=eq.' + id, { method: 'DELETE', prefer: 'return=minimal' }) }
+
+// PRODUCTS
+export async function getProducts(businessId) { return sbFetch('products?business_id=eq.' + businessId + '&order=name.asc&select=*') }
+export async function addProduct(data) { return sbFetch('products', { method: 'POST', body: JSON.stringify(data) }) }
+export async function updateProduct(id, data) { return sbFetch('products?id=eq.' + id, { method: 'PATCH', body: JSON.stringify(data), prefer: 'return=minimal' }) }
+export async function deleteProduct(id) { return sbFetch('products?id=eq.' + id, { method: 'DELETE', prefer: 'return=minimal' }) }
+
+// SALES
+export async function getSales(businessId, filters = {}) {
+  let query = 'sales?business_id=eq.' + businessId + '&order=created_at.desc&select=*'
+  if (filters.date) query += '&created_at=gte.' + filters.date + 'T00:00:00'
+  if (filters.onHold !== undefined) query += '&is_on_hold=eq.' + filters.onHold
+  if (filters.isCredit !== undefined) query += '&is_credit=eq.' + filters.isCredit
+  return sbFetch(query)
+}
+export async function addSale(data) { return sbFetch('sales', { method: 'POST', body: JSON.stringify(data) }) }
+export async function updateSale(id, data) { return sbFetch('sales?id=eq.' + id, { method: 'PATCH', body: JSON.stringify(data), prefer: 'return=minimal' }) }
+export async function getTodaySales(businessId) {
+  const today = new Date().toISOString().split('T')[0]
+  return sbFetch('sales?business_id=eq.' + businessId + '&created_at=gte.' + today + 'T00:00:00&is_on_hold=eq.false&order=created_at.desc&select=*')
+}
+
+// CLIENTS
+export async function getClients(businessId) { return sbFetch('clients?business_id=eq.' + businessId + '&order=full_name.asc&select=*') }
+export async function addClient(data) { return sbFetch('clients', { method: 'POST', body: JSON.stringify(data) }) }
+export async function updateClient(id, data) { return sbFetch('clients?id=eq.' + id, { method: 'PATCH', body: JSON.stringify(data), prefer: 'return=minimal' }) }
+export async function searchClients(businessId, query) {
+  return sbFetch('clients?business_id=eq.' + businessId + '&full_name=ilike.*' + encodeURIComponent(query) + '*&select=*')
+}
+
+// EXPENSES
+export async function getExpenses(businessId) { return sbFetch('expenses?business_id=eq.' + businessId + '&order=created_at.desc&select=*') }
+export async function addExpense(data) { return sbFetch('expenses', { method: 'POST', body: JSON.stringify(data) }) }
+export async function deleteExpense(id) { return sbFetch('expenses?id=eq.' + id, { method: 'DELETE', prefer: 'return=minimal' }) }
+
+// APPOINTMENTS
+export async function getAppointments(businessId) { return sbFetch('appointments?business_id=eq.' + businessId + '&order=date.asc&select=*') }
+export async function addAppointment(data) { return sbFetch('appointments', { method: 'POST', body: JSON.stringify(data) }) }
+export async function updateAppointment(id, data) { return sbFetch('appointments?id=eq.' + id, { method: 'PATCH', body: JSON.stringify(data), prefer: 'return=minimal' }) }
+export async function deleteAppointment(id) { return sbFetch('appointments?id=eq.' + id, { method: 'DELETE', prefer: 'return=minimal' }) }
+
+// DEBTS
+export async function getDebts(businessId) { return sbFetch('debts?business_id=eq.' + businessId + '&order=created_at.desc&select=*') }
+export async function addDebt(data) { return sbFetch('debts', { method: 'POST', body: JSON.stringify(data) }) }
+export async function updateDebt(id, data) { return sbFetch('debts?id=eq.' + id, { method: 'PATCH', body: JSON.stringify(data), prefer: 'return=minimal' }) }
+
+// PURCHASES
+export async function getPurchases(businessId) { return sbFetch('purchases?business_id=eq.' + businessId + '&order=created_at.desc&select=*') }
+export async function addPurchase(data) { return sbFetch('purchases', { method: 'POST', body: JSON.stringify(data) }) }
+export async function updatePurchase(id, data) { return sbFetch('purchases?id=eq.' + id, { method: 'PATCH', body: JSON.stringify(data), prefer: 'return=minimal' }) }
+
+// PATIENTS (hospital)
+export async function getPatients(businessId) { return sbFetch('patients?business_id=eq.' + businessId + '&order=created_at.desc&select=*') }
+export async function addPatient(data) { return sbFetch('patients', { method: 'POST', body: JSON.stringify(data) }) }
+export async function updatePatient(id, data) { return sbFetch('patients?id=eq.' + id, { method: 'PATCH', body: JSON.stringify(data), prefer: 'return=minimal' }) }
+export async function getTriage(patientId) { const r = await sbFetch('triage?patient_id=eq.' + patientId + '&select=*'); return r[0] || null }
+export async function addTriage(data) { return sbFetch('triage', { method: 'POST', body: JSON.stringify(data) }) }
+export async function addConsultation(data) { return sbFetch('consultations', { method: 'POST', body: JSON.stringify(data) }) }
+export async function getPrescriptions(businessId) { return sbFetch('prescriptions?business_id=eq.' + businessId + '&order=created_at.desc&select=*') }
+export async function addPrescription(data) { return sbFetch('prescriptions', { method: 'POST', body: JSON.stringify(data) }) }
+export async function updatePrescription(id, data) { return sbFetch('prescriptions?id=eq.' + id, { method: 'PATCH', body: JSON.stringify(data), prefer: 'return=minimal' }) }
+
+// SETTINGS
+export async function getSettings(businessId) {
+  const r = await sbFetch('business_settings?business_id=eq.' + businessId + '&select=*')
+  return r[0] || null
+}
+export async function saveSettings(businessId, data) {
+  const existing = await getSettings(businessId)
+  if (existing) {
+    return sbFetch('business_settings?business_id=eq.' + businessId, { method: 'PATCH', body: JSON.stringify(data), prefer: 'return=minimal' })
+  }
+  return sbFetch('business_settings', { method: 'POST', body: JSON.stringify({ ...data, business_id: businessId }) })
+}
+
+// ADMIN TEAM
+export async function getAdminTeam() { return sbFetch('admin_team?select=*&order=created_at.desc') }
+export async function addAdminTeam(data) { return sbFetch('admin_team', { method: 'POST', body: JSON.stringify(data) }) }
+export async function removeAdminTeam(id) { return sbFetch('admin_team?id=eq.' + id, { method: 'DELETE', prefer: 'return=minimal' }) }
+
+// OFFLINE SUPPORT
+const CACHE = 'carehub_v1'
+export function cacheData(key, data) {
+  try { localStorage.setItem(CACHE + '_' + key, JSON.stringify(data)) } catch (e) {}
+}
+export function getCached(key) {
+  try { const d = localStorage.getItem(CACHE + '_' + key); return d ? JSON.parse(d) : null } catch (e) { return null }
+}
+export function queueOfflineSale(sale) {
+  try {
+    const q = JSON.parse(localStorage.getItem(CACHE + '_offline_sales') || '[]')
+    q.push({ ...sale, _offline_id: Date.now() })
+    localStorage.setItem(CACHE + '_offline_sales', JSON.stringify(q))
+  } catch (e) {}
+}
+export function getOfflineQueue() {
+  try { return JSON.parse(localStorage.getItem(CACHE + '_offline_sales') || '[]') } catch (e) { return [] }
+}
+export function clearOfflineQueue() {
+  try { localStorage.removeItem(CACHE + '_offline_sales') } catch (e) {}
+}
+export async function syncOfflineSales(businessId) {
+  if (!navigator.onLine) return 0
+  const queue = getOfflineQueue()
+  if (!queue.length) return 0
+  let count = 0
+  for (const sale of queue) {
+    try {
+      const { _offline_id, ...data } = sale
+      await addSale({ ...data, business_id: businessId })
+      count++
+    } catch (e) {}
+  }
+  if (count > 0) clearOfflineQueue()
+  return count
+}
