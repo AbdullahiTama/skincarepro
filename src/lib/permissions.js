@@ -1,0 +1,169 @@
+export const ROLES = {
+  Owner: {
+    nav: ['dashboard','pos','inventory','clients','appointments','consultation','expenses','debts','purchases','staff','reports','settings','carefind','reception','triage','doctor','rx_inbox'],
+    canEditPrice: true,
+    canEditStock: true,
+    canDelete: true,
+    canViewReports: true,
+    canExportReports: true,
+    canManageStaff: true,
+    canViewFinance: true,
+    canMakeSales: true,
+    canViewSettings: true,
+    label: 'Owner — Full Access',
+  },
+  Manager: {
+    nav: ['dashboard','pos','inventory','clients','appointments','consultation','expenses','debts','purchases','reports','carefind'],
+    canEditPrice: false,
+    canEditStock: false,
+    canDelete: false,
+    canViewReports: true,
+    canExportReports: false,
+    canManageStaff: false,
+    canViewFinance: true,
+    canMakeSales: true,
+    canViewSettings: false,
+    label: 'Manager',
+  },
+  Pharmacist: {
+    nav: ['dashboard','pos','inventory','clients','consultation','rx_inbox'],
+    canEditPrice: false,
+    canEditStock: false,
+    canDelete: false,
+    canViewReports: false,
+    canExportReports: false,
+    canManageStaff: false,
+    canViewFinance: false,
+    canMakeSales: true,
+    canViewSettings: false,
+    label: 'Pharmacist',
+  },
+  Therapist: {
+    nav: ['dashboard','pos','clients','appointments','consultation'],
+    canEditPrice: false,
+    canEditStock: false,
+    canDelete: false,
+    canViewReports: false,
+    canExportReports: false,
+    canManageStaff: false,
+    canViewFinance: false,
+    canMakeSales: true,
+    canViewSettings: false,
+    label: 'Therapist',
+  },
+  Receptionist: {
+    nav: ['dashboard','clients','appointments','reception'],
+    canEditPrice: false,
+    canEditStock: false,
+    canDelete: false,
+    canViewReports: false,
+    canExportReports: false,
+    canManageStaff: false,
+    canViewFinance: false,
+    canMakeSales: false,
+    canViewSettings: false,
+    label: 'Receptionist',
+  },
+  Cashier: {
+    nav: ['dashboard','pos','clients'],
+    canEditPrice: false,
+    canEditStock: false,
+    canDelete: false,
+    canViewReports: false,
+    canExportReports: false,
+    canManageStaff: false,
+    canViewFinance: false,
+    canMakeSales: true,
+    canViewSettings: false,
+    label: 'Cashier',
+  },
+  Nurse: {
+    nav: ['dashboard','triage','clients'],
+    canEditPrice: false,
+    canEditStock: false,
+    canDelete: false,
+    canViewReports: false,
+    canExportReports: false,
+    canManageStaff: false,
+    canViewFinance: false,
+    canMakeSales: false,
+    canViewSettings: false,
+    label: 'Nurse',
+  },
+  Doctor: {
+    nav: ['dashboard','doctor','consultation','clients'],
+    canEditPrice: false,
+    canEditStock: false,
+    canDelete: false,
+    canViewReports: false,
+    canExportReports: false,
+    canManageStaff: false,
+    canViewFinance: false,
+    canMakeSales: false,
+    canViewSettings: false,
+    label: 'Doctor',
+  },
+  'Lab Technician': {
+    nav: ['dashboard','clients'],
+    canEditPrice: false,
+    canEditStock: false,
+    canDelete: false,
+    canViewReports: false,
+    canExportReports: false,
+    canManageStaff: false,
+    canViewFinance: false,
+    canMakeSales: false,
+    canViewSettings: false,
+    label: 'Lab Technician',
+  },
+}
+
+export function getPerms(role) {
+  return ROLES[role] || ROLES['Cashier']
+}
+
+export function can(role, action) {
+  return getPerms(role)[action] || false
+}
+
+export const ALL_NAV_DEFAULT = [
+  ['dashboard', '🏠', 'Dashboard'],
+  ['pos', '🛒', 'POS / Sales'],
+  ['inventory', '📦', 'Inventory'],
+  ['clients', '👥', 'Clients'],
+  ['appointments', '📅', 'Appointments'],
+  ['consultation', '📋', 'Consultations'],
+  ['expenses', '💸', 'Expenses'],
+  ['debts', '🏦', 'Debts'],
+  ['purchases', '🚚', 'Purchases'],
+  ['carefind', '🔍', 'CareFind Profile'],
+  ['staff', '👤', 'Staff'],
+  ['reports', '📊', 'Reports'],
+  ['settings', '⚙️', 'Settings'],
+]
+
+export const ALL_NAV_HOSPITAL = [
+  ['dashboard', '🏠', 'Dashboard'],
+  ['reception', '👩‍💼', 'Reception'],
+  ['triage', '🏥', 'Triage'],
+  ['doctor', '👨‍⚕️', 'Doctor'],
+  ['rx_inbox', '💊', 'Rx Inbox'],
+  ['pos', '🛒', 'POS / Sales'],
+  ['inventory', '📦', 'Inventory'],
+  ['clients', '👥', 'Patients'],
+  ['expenses', '💸', 'Expenses'],
+  ['debts', '🏦', 'Debts'],
+  ['purchases', '🚚', 'Purchases'],
+  ['carefind', '🔍', 'CareFind Profile'],
+  ['staff', '👤', 'Staff'],
+  ['reports', '📊', 'Reports'],
+  ['settings', '⚙️', 'Settings'],
+]
+
+export function getNavItems(role, isHospital) {
+  const perms = getPerms(role)
+  const all = isHospital ? ALL_NAV_HOSPITAL : ALL_NAV_DEFAULT
+  return all.filter(item => perms.nav.includes(item[0]))
+}
+
+export const ROLE_LIST = ['Owner', 'Manager', 'Pharmacist', 'Therapist', 'Receptionist', 'Cashier', 'Nurse', 'Doctor', 'Lab Technician']
