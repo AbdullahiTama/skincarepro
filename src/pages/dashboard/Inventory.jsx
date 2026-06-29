@@ -3,7 +3,7 @@ import { getProducts, addProduct, updateProduct, deleteProduct } from '../../lib
 import { fmt, todayDate, TEAL, TEALC, PRODUCT_CATS, PRODUCT_EMOJIS } from '../../lib/utils'
 import { Card, StatCard, SectionHead, Modal, Pill, Inp, Sel, Textarea, Toggle, GhostBtn, TealBtn, RedBtn, Loading, Empty, useToast, Toast } from '../../components/ui'
 
-export default function Inventory({ brand, products, setProducts, role, perms }) {
+export default function Inventory({ brand, products, setProducts, role, perms, loadProducts }) {
   const [loading, setLoading] = useState(false)
   const [search, setSearch] = useState('')
   const [catFilter, setCatFilter] = useState('All')
@@ -30,15 +30,27 @@ export default function Inventory({ brand, products, setProducts, role, perms })
   const onCareFind = products.filter(p => p.list_on_carefind !== false && p.stock > 0).length
 
   async function reload() {
-    try { const p = await getProducts(brand.id); setProducts(p || []) } catch (e) {}
+    try {
+      const p = await getProducts(brand.id)
+      if (p) setProducts(p)
+    } catch (e) {}
+    if (loadProducts) loadProducts()
   }
 
   async function saveProduct(data, isEdit) {
     try {
-      if (isEdit) { await updateProduct(data.id, data); showToast('Product updated!') }
-      else { await addProduct({ ...data, business_id: brand.id }); showToast('Product added!') }
+      if (isEdit) {
+        await updateProduct(data.id, data)
+        showToast('Product updated!')
+      } else {
+        await addProduct({ ...data, business_id: brand.id })
+        showToast('Product added!')
+      }
       await reload()
-    } catch (e) { showToast('Error saving product') }
+    } catch (e) {
+      console.error(e)
+      showToast('Error saving product — ' + (e.message || 'Please try again'))
+    }
   }
 
   async function handleDelete(id) {
@@ -106,11 +118,15 @@ export default function Inventory({ brand, products, setProducts, role, perms })
   async function confirmUpload() {
     let count = 0
     for (const p of uploadData) {
-      try { await addProduct({ ...p, business_id: brand.id }); count++ } catch (e) {}
+      try {
+        await addProduct({ ...p, business_id: brand.id })
+        count++
+      } catch (e) {}
     }
     await reload()
-    showToast(count + ' products imported!')
-    setUploadData([]); setShowUpload(false)
+    showToast(count + ' products imported successfully!')
+    setUploadData([])
+    setShowUpload(false)
   }
 
   function startScan() {
