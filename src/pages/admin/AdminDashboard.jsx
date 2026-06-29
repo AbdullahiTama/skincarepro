@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { getBusinesses, getAdminTeam, updateBusiness, addAdminTeam, removeAdminTeam } from '../../lib/supabase'
+import { emailBusinessApproved, emailBusinessRejected } from '../../lib/email'
 import { businessIcon, businessName, TEAL, DARK } from '../../lib/utils'
 import { Card, StatCard, Pill, Modal, Inp, Sel, GhostBtn, TealBtn, Avatar, Loading, useToast, Toast } from '../../components/ui'
 
@@ -26,7 +27,31 @@ export default function AdminDashboard() {
   }
 
   async function updateStatus(id, status, msg) {
-    try { await updateBusiness(id, { status }); setBusinesses(prev => prev.map(b => b.id === id ? { ...b, status } : b)); setSel(null); showToast(msg) } catch (e) { showToast('Error updating status.') }
+    try {
+      await updateBusiness(id, { status })
+      const biz = businesses.find(b => b.id === id)
+      setBusinesses(prev => prev.map(b => b.id === id ? { ...b, status } : b))
+      setSel(null)
+      showToast(msg)
+      // Send email notification
+      if (biz) {
+        try {
+          if (status === 'active') {
+            await emailBusinessApproved({
+              businessName: biz.name,
+              ownerName: biz.owner,
+              ownerEmail: biz.email,
+            })
+          } else if (status === 'rejected') {
+            await emailBusinessRejected({
+              businessName: biz.name,
+              ownerName: biz.owner,
+              ownerEmail: biz.email,
+            })
+          }
+        } catch (e) {}
+      }
+    } catch (e) { showToast('Error updating status.') }
   }
   const [sel, setSel] = useState(null)
 
