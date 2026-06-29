@@ -1,3 +1,4 @@
+
 import { useState, useEffect } from 'react'
 import { addSale, updateSale, getSales, getTodaySales, getSettings, queueOfflineSale, getOfflineQueue, addDebt, updateDebt } from '../../lib/supabase'
 import { fmt, genId, todayDate, nowStr, TEAL, TEALC, DARK } from '../../lib/utils'
@@ -87,24 +88,85 @@ export default function POS({ brand, products, setProducts, role, perms }) {
     if (!cart.length) return
     if (method === 'Split' && splitTotal < total) { showToast('Split amounts do not add up to total'); return }
     const txnNo = genId('TXN')
+    const clientName = client || 'Walk-in'
+    const amtPaid = method === 'Cash' ? parseFloat(cash) || total : method === 'Split' ? splitTotal : total
+    const balance = Math.max(0, total - amtPaid)
+    const isShortfall = amtPaid < total && method !== 'Credit'
+
     const saleData = {
       txn_no: txnNo,
-      client_name: client || 'Walk-in',
+      client_name: clientName,
       items: JSON.stringify(cart),
       subtotal: sub,
       discount: discAmt,
       total,
       payment_method: method,
       payment_split: method === 'Split' ? JSON.stringify(splitAmounts) : null,
-      amount_paid: method === 'Cash' ? parseFloat(cash) || total : method === 'Split' ? splitTotal : total,
-      balance: 0,
-      is_credit: false,
+      amount_paid: amtPaid,
+      balance: balance,
+      is_credit: isShortfall,
       is_on_hold: false,
     }
-    const receiptData = { id: txnNo, client: client || 'Walk-in', items: [...cart], subtotal: sub, disc: discAmt, total, method, cashGiven: parseFloat(cash) || 0, splitAmounts: method === 'Split' ? { ...splitAmounts } : null }
+
+    const receiptData = {
+      id: txnNo,
+      client: clientName,
+      items: [...cart],
+      subtotal: sub,
+      disc: discAmt,
+      total,
+      method,
+      cashGiven: parseFloat(cash) || 0,
+      splitAmounts: method === 'Split' ? { ...splitAmounts } : null,
+      balance,
+    }
+
     setReceipt(receiptData)
-    setProducts(prev => prev.map(p => { const s = cart.find(c => c.id === p.id); return s && p.cat !== 'Services' ? { ...p, stock: Math.max(0, p.stock - s.qty) } : p }))
+    setProducts(prev => prev.map(p => {
+      const s = cart.find(c => c.id === p.id)
+      return s && (p.cat || p.category) !== 'Services' ? { ...p, stock: Math.max(0, p.stock - s.qty) } : p
+    }))
     await saveSale(saleData)
+
+    // AUTO-CREATE DEBT if amount paid is less than total
+    if (balance > 0 && clientName !== 'Walk-in' && brand?.id) {
+      try {
+        await addDebt({
+          business_id: brand.id,
+          direction: 'owes_us',
+          party_name: clientName,
+          amount: total,
+          amount_paid: amtPaid,
+          balance: balance,
+          due_date: '',
+          status: 'pending',
+          description: isShortfall
+            ? 'Shortfall on sale — TXN: ' + txnNo + ' | Items: ' + cart.map(i => i.name + ' x' + i.qty).join(', ')
+            : 'Credit sale — TXN: ' + txnNo + ' | Items: ' + cart.map(i => i.name + ' x' + i.qty).join(', '),
+          source: 'credit_sale',
+          source_ref: txnNo,
+        })
+        if (balance > 0) showToast('Sale saved! ₦' + balance.toLocaleString() + ' debt recorded for ' + clientName)
+      } catch (e) {}
+    } else if (balance > 0 && clientName === 'Walk-in') {
+      // Walk-in shortfall — still record but as Walk-in
+      try {
+        await addDebt({
+          business_id: brand.id,
+          direction: 'owes_us',
+          party_name: 'Walk-in — ' + txnNo,
+          amount: total,
+          amount_paid: amtPaid,
+          balance: balance,
+          due_date: '',
+          status: 'pending',
+          description: 'Sale shortfall — TXN: ' + txnNo + ' | Items: ' + cart.map(i => i.name + ' x' + i.qty).join(', '),
+          source: 'credit_sale',
+          source_ref: txnNo,
+        })
+      } catch (e) {}
+    }
+
     loadSalesData()
   }
 
