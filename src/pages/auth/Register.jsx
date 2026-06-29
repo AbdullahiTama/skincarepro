@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { useNavigate, Link } from 'react-router-dom'
 import { registerBusiness } from '../../lib/supabase'
+import { emailAdminNewRegistration } from '../../lib/email'
 import { Card, Inp, Sel, TealBtn, DarkBtn, GhostBtn, Toggle } from '../../components/ui/index'
 import { TEAL, DARK, BUSINESS_TYPES, NIG_STATES, businessIcon, businessName } from '../../lib/utils'
 
@@ -44,6 +45,16 @@ export default function Register() {
         visible_on_carefind: data.visibleOnCareFind !== false,
         plan: 'basic',
       })
+      // Send email notification to admin
+      try {
+        await emailAdminNewRegistration({
+          businessName: data.businessName,
+          ownerName: (data.firstName + ' ' + data.lastName).trim(),
+          businessType: data.businessType || 'skincare',
+          state: data.state || '',
+          email: data.ownerEmail,
+        })
+      } catch (e) {}
       setDone(true)
     } catch (e) {
       alert('Registration failed. This email may already be registered.')
