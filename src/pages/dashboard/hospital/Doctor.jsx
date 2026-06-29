@@ -1,19 +1,43 @@
 import { useState, useEffect } from 'react'
+import { useAuth } from '../../../App'
 import { getPatients, getTriage, addConsultation, addPrescription, updatePatient } from '../../../lib/supabase'
-import { fmt } from '../../../lib/utils'
+import { fmt, TEALC } from '../../../lib/utils'
 import { Card, SectionHead, Inp, Sel, Textarea, GhostBtn, TealBtn, Avatar, Loading, Empty, Pill, useToast, Toast } from '../../../components/ui'
 
+const SB_URL = 'https://szdybxmgmhndoytqanfb.supabase.co'
+const SB_KEY = 'sb_publishable_xEs5f4L6qSxqXikPZM06SQ_TKy4UNFz'
+async function sbFetch(path, options = {}) {
+  const res = await fetch(SB_URL + '/rest/v1/' + path, { method: options.method || 'GET', headers: { 'apikey': SB_KEY, 'Authorization': 'Bearer ' + SB_KEY, 'Content-Type': 'application/json', 'Prefer': options.prefer || 'return=representation' }, body: options.body || undefined })
+  const text = await res.text(); return text ? JSON.parse(text) : []
+}
+async function addLabRequest(data) { return sbFetch('lab_requests', { method: 'POST', body: JSON.stringify(data) }) }
+async function addImagingRequest(data) { return sbFetch('imaging_requests', { method: 'POST', body: JSON.stringify(data) }) }
+async function getPatientMessages(patientId) { return sbFetch('patient_messages?patient_id=eq.' + patientId + '&order=created_at.asc&select=*') }
+async function addPatientMessage(data) { return sbFetch('patient_messages', { method: 'POST', body: JSON.stringify(data) }) }
+
 export default function Doctor({ brand, products }) {
+  const { auth } = useAuth()
+  const staffName = auth?.staff ? auth.staff.full_name : (auth?.brand?.owner || 'Doctor')
   const [patients, setPatients] = useState([])
   const [loading, setLoading] = useState(true)
   const [selected, setSelected] = useState(null)
   const [triageData, setTriageData] = useState(null)
+  const [messages, setMessages] = useState([])
+  const [newMessage, setNewMessage] = useState('')
+  const [labResults, setLabResults] = useState([])
   const [consult, setConsult] = useState({})
   const [meds, setMeds] = useState([])
   const [medSearch, setMedSearch] = useState('')
   const [saving, setSaving] = useState(false)
   const [done, setDone] = useState(false)
-  const [sentTo, setSentTo] = useState('')
+  const [sentTo, setSentTo] = useState([])
+  // Destinations — doctor can select multiple
+  const [destinations, setDestinations] = useState({ pharmacy: false, lab: false, imaging: false })
+  // Lab tests to order
+  const [labTests, setLabTests] = useState([])
+  const [labTestInput, setLabTestInput] = useState('')
+  // Imaging requests
+  const [imagingRequests, setImagingRequests] = useState([{ scan_type: '', body_part: '', clinical_info: '' }])
   const { msg, show: showToast } = useToast()
   const c = (k, v) => setConsult(p => ({ ...p, [k]: v }))
 
@@ -26,8 +50,15 @@ export default function Doctor({ brand, products }) {
   }
 
   async function openPatient(p) {
-    setSelected(p); setConsult({}); setMeds([]); setDone(false); setSentTo('')
-    try { const t = await getTriage(p.id); setTriageData(t) } catch (e) {}
+    setSelected(p); setConsult({}); setMeds([]); setDone(false); setSentTo([])
+    setDestinations({ pharmacy: false, lab: false, imaging: false })
+    setLabTests([]); setLabTestInput('')
+    setImagingRequests([{ scan_type: '', body_part: '', clinical_info: '' }])
+    try {
+      const [t, msgs] = await Promise.all([getTriage(p.id), getPatientMessages(p.id)])
+      setTriageData(t)
+      setMessages(msgs || [])
+    } catch (e) {}
   }
 
   const medicines = (products || []).filter(p => (p.cat || p.category) === 'Medicines' && (p.name.toLowerCase().includes(medSearch.toLowerCase()) || (p.generic_name || '').toLowerCase().includes(medSearch.toLowerCase())))
@@ -36,16 +67,103 @@ export default function Doctor({ brand, products }) {
 
   async function sendToPharmacy() {
     if (!consult.dx1) { alert('Please enter at least a primary diagnosis.'); return }
+    if (!destinations.pharmacy && !destinations.lab && !destinations.imaging) {
+      alert('Please select at least one destination — Pharmacy, Lab or Imaging.'); return
+    }
     setSaving(true)
     try {
-      const c = await addConsultation({ patient_id: selected.id, business_id: brand.id, hpi: consult.hpi || '', examination: consult.exam || '', primary_diagnosis: consult.dx1 || '', secondary_diagnosis: consult.dx2 || '', clinical_notes: consult.notes || '', disposition: consult.disposition || 'Discharge', referral_dest: consult.refDest || '', referral_reason: consult.refReason || '', ward: consult.ward || '', counselling: consult.counselling || '', doctor_name: consult.doctorName || '', status: 'completed' })
-      if (meds.length > 0 || consult.labTests || consult.imaging) {
-        await addPrescription({ patient_id: selected.id, consultation_id: (c[0] || {}).id || null, business_id: brand.id, patient_name: selected.full_name, doctor_name: consult.doctorName || '', medicines: JSON.stringify(meds), lab_tests: consult.labTests || '', imaging: consult.imaging || '', notes: consult.prescNotes || '', status: 'pending' })
+      const sentDestinations = []
+      // Save consultation with doctor name
+      const c = await addConsultation({
+        patient_id: selected.id,
+        business_id: brand.id,
+        hpi: consult.hpi || '',
+        examination: consult.exam || '',
+        primary_diagnosis: consult.dx1 || '',
+        secondary_diagnosis: consult.dx2 || '',
+        clinical_notes: consult.notes || '',
+        disposition: consult.disposition || 'Discharge',
+        referral_dest: consult.refDest || '',
+        referral_reason: consult.refReason || '',
+        ward: consult.ward || '',
+        counselling: consult.counselling || '',
+        doctor_name: staffName,
+        performed_by: staffName,
+        status: 'completed',
+      })
+
+      // Send to Pharmacy
+      if (destinations.pharmacy && meds.length > 0) {
+        await addPrescription({
+          patient_id: selected.id,
+          consultation_id: (c[0] || {}).id || null,
+          business_id: brand.id,
+          patient_name: selected.full_name,
+          doctor_name: staffName,
+          medicines: JSON.stringify(meds),
+          lab_tests: consult.labTests || '',
+          imaging: consult.imaging || '',
+          notes: consult.prescNotes || '',
+          status: 'pending',
+        })
+        sentDestinations.push('pharmacy')
       }
-      const nextStatus = meds.length > 0 ? 'at_pharmacy' : 'discharged'
+
+      // Send to Lab
+      if (destinations.lab && labTests.length > 0) {
+        await addLabRequest({
+          patient_id: selected.id,
+          business_id: brand.id,
+          consultation_id: (c[0] || {}).id || null,
+          patient_name: selected.full_name,
+          requested_by: staffName,
+          tests: JSON.stringify(labTests.map(t => ({ name: t }))),
+          status: 'pending',
+          priority: consult.labPriority || 'routine',
+          notes: consult.labNotes || '',
+        })
+        sentDestinations.push('lab')
+      }
+
+      // Send to Imaging
+      if (destinations.imaging) {
+        for (const img of imagingRequests.filter(i => i.scan_type)) {
+          await addImagingRequest({
+            patient_id: selected.id,
+            business_id: brand.id,
+            consultation_id: (c[0] || {}).id || null,
+            patient_name: selected.full_name,
+            requested_by: staffName,
+            scan_type: img.scan_type,
+            body_part: img.body_part || '',
+            clinical_info: img.clinical_info || consult.dx1 || '',
+            status: 'pending',
+          })
+        }
+        sentDestinations.push('imaging')
+      }
+
+      // Determine patient next status
+      let nextStatus = 'discharged'
+      if (sentDestinations.includes('lab') || sentDestinations.includes('imaging')) nextStatus = 'at_lab'
+      else if (sentDestinations.includes('pharmacy')) nextStatus = 'at_pharmacy'
       await updatePatient(selected.id, { status: nextStatus })
-      setSentTo(nextStatus); setDone(true); load()
-    } catch (e) { alert('Error saving consultation.') }
+
+      // Send message to communication thread
+      await addPatientMessage({
+        patient_id: selected.id,
+        business_id: brand.id,
+        sender_name: staffName,
+        sender_role: 'Doctor',
+        department: 'Consultation',
+        message: 'Consultation complete. Diagnosis: ' + consult.dx1 + '. Sent to: ' + sentDestinations.join(', '),
+        message_type: 'consultation',
+      })
+
+      setSentTo(sentDestinations)
+      setDone(true)
+      load()
+    } catch (e) { alert('Error saving consultation. Please try again.') }
     setSaving(false)
   }
 
@@ -151,9 +269,102 @@ export default function Doctor({ brand, products }) {
           <Sel label='Follow-up Clinic' value={consult.fuClinic} onChange={v => c('fuClinic', v)} options={['Same Doctor', 'General OPD', 'Cardiology', 'Pediatrics', 'Surgery', 'Other']} />
         </div>
       </Card>
+      {/* Destination Selection */}
+      <Card style={{ padding: '20px', marginBottom: '14px' }}>
+        <div style={{ fontSize: '15px', fontWeight: '800', marginBottom: '14px' }}>📤 Send Patient To</div>
+        <div style={{ fontSize: '12px', color: '#888', marginBottom: '12px' }}>Select all that apply — patient will be sent to each selected department</div>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+          {/* Pharmacy */}
+          <label style={{ display: 'flex', alignItems: 'center', gap: '12px', padding: '14px', borderRadius: '12px', border: '2px solid ' + (destinations.pharmacy ? '#0f766e' : '#e5e7eb'), background: destinations.pharmacy ? '#f0fdfa' : 'white', cursor: 'pointer' }}>
+            <input type='checkbox' checked={destinations.pharmacy} onChange={e => setDestinations(p => ({ ...p, pharmacy: e.target.checked }))} style={{ width: '18px', height: '18px', accentColor: '#0f766e' }} />
+            <div><div style={{ fontWeight: '700', fontSize: '14px' }}>💊 Pharmacy</div><div style={{ fontSize: '12px', color: '#888' }}>Send prescription for dispensing</div></div>
+          </label>
+          {/* Lab */}
+          <label style={{ display: 'flex', alignItems: 'center', gap: '12px', padding: '14px', borderRadius: '12px', border: '2px solid ' + (destinations.lab ? '#d97706' : '#e5e7eb'), background: destinations.lab ? '#fffbeb' : 'white', cursor: 'pointer' }}>
+            <input type='checkbox' checked={destinations.lab} onChange={e => setDestinations(p => ({ ...p, lab: e.target.checked }))} style={{ width: '18px', height: '18px', accentColor: '#d97706' }} />
+            <div><div style={{ fontWeight: '700', fontSize: '14px' }}>🔬 Laboratory</div><div style={{ fontSize: '12px', color: '#888' }}>Send blood tests and investigations</div></div>
+          </label>
+          {/* Imaging */}
+          <label style={{ display: 'flex', alignItems: 'center', gap: '12px', padding: '14px', borderRadius: '12px', border: '2px solid ' + (destinations.imaging ? '#7c3aed' : '#e5e7eb'), background: destinations.imaging ? '#f5f3ff' : 'white', cursor: 'pointer' }}>
+            <input type='checkbox' checked={destinations.imaging} onChange={e => setDestinations(p => ({ ...p, imaging: e.target.checked }))} style={{ width: '18px', height: '18px', accentColor: '#7c3aed' }} />
+            <div><div style={{ fontWeight: '700', fontSize: '14px' }}>🩻 Imaging / Radiology</div><div style={{ fontSize: '12px', color: '#888' }}>Send X-ray, USS, CT scan requests</div></div>
+          </label>
+        </div>
+
+        {/* Lab test entry */}
+        {destinations.lab && (
+          <div style={{ marginTop: '16px', padding: '14px', borderRadius: '10px', background: '#fffbeb', border: '1px solid #fcd34d' }}>
+            <div style={{ fontWeight: '700', fontSize: '13px', marginBottom: '10px' }}>🔬 Lab Tests to Order</div>
+            <div style={{ display: 'flex', gap: '8px', marginBottom: '10px' }}>
+              <input value={labTestInput} onChange={e => setLabTestInput(e.target.value)} placeholder='Type test name and press Add'
+                style={{ flex: 1, padding: '8px 12px', borderRadius: '8px', border: '1px solid #e5e7eb', fontSize: '13px', outline: 'none' }}
+                onKeyDown={e => { if (e.key === 'Enter' && labTestInput.trim()) { setLabTests(prev => [...prev, labTestInput.trim()]); setLabTestInput('') } }} />
+              <button onClick={() => { if (labTestInput.trim()) { setLabTests(prev => [...prev, labTestInput.trim()]); setLabTestInput('') } }}
+                style={{ padding: '8px 14px', borderRadius: '8px', border: 'none', background: '#d97706', color: 'white', fontWeight: '700', cursor: 'pointer', fontSize: '13px' }}>Add</button>
+            </div>
+            <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap', marginBottom: '8px' }}>
+              {['Malaria RDT', 'FBC', 'PCV', 'Blood Sugar', 'Widal', 'Urinalysis', 'LFT', 'KFT', 'HIV', 'HBsAg'].map(t => (
+                <button key={t} onClick={() => !labTests.includes(t) && setLabTests(prev => [...prev, t])}
+                  style={{ padding: '4px 10px', borderRadius: '6px', border: '1px solid ' + (labTests.includes(t) ? '#d97706' : '#e5e7eb'), background: labTests.includes(t) ? '#fffbeb' : 'white', color: labTests.includes(t) ? '#d97706' : '#555', fontWeight: '600', fontSize: '11px', cursor: 'pointer' }}>
+                  {labTests.includes(t) ? '✓ ' : '+ '}{t}
+                </button>
+              ))}
+            </div>
+            {labTests.length > 0 && (
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
+                {labTests.map((t, i) => (
+                  <span key={i} style={{ display: 'flex', alignItems: 'center', gap: '4px', padding: '4px 10px', borderRadius: '20px', background: '#fef3c7', color: '#92400e', fontSize: '12px', fontWeight: '600' }}>
+                    🔬 {t}
+                    <button onClick={() => setLabTests(prev => prev.filter((_, j) => j !== i))} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#92400e', fontWeight: '900', fontSize: '14px', lineHeight: 1 }}>×</button>
+                  </span>
+                ))}
+              </div>
+            )}
+            <Sel label='Priority' value={consult.labPriority} onChange={v => setConsult(p => ({ ...p, labPriority: v }))} options={['routine', 'urgent', 'stat']} style={{ marginTop: '10px' }} />
+          </div>
+        )}
+
+        {/* Imaging entry */}
+        {destinations.imaging && (
+          <div style={{ marginTop: '16px', padding: '14px', borderRadius: '10px', background: '#f5f3ff', border: '1px solid #ddd6fe' }}>
+            <div style={{ fontWeight: '700', fontSize: '13px', marginBottom: '10px' }}>🩻 Imaging Requests</div>
+            {imagingRequests.map((img, i) => (
+              <div key={i} style={{ marginBottom: '12px', padding: '12px', borderRadius: '8px', background: 'white', border: '1px solid #e5e7eb' }}>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px', marginBottom: '8px' }}>
+                  <Sel label='Scan Type' value={img.scan_type} onChange={v => setImagingRequests(prev => prev.map((x, j) => j === i ? { ...x, scan_type: v } : x))} options={['X-ray', 'Ultrasound (USS)', 'CT Scan', 'MRI', 'Echocardiogram', 'Mammogram', 'Other']} />
+                  <Sel label='Body Part' value={img.body_part} onChange={v => setImagingRequests(prev => prev.map((x, j) => j === i ? { ...x, body_part: v } : x))} options={['Chest', 'Abdomen', 'Pelvis', 'Head', 'Spine', 'Upper Limb', 'Lower Limb', 'Neck', 'Heart', 'Other']} />
+                </div>
+                <Inp label='Clinical Information' value={img.clinical_info} onChange={v => setImagingRequests(prev => prev.map((x, j) => j === i ? { ...x, clinical_info: v } : x))} placeholder='Reason for scan...' />
+                {imagingRequests.length > 1 && <button onClick={() => setImagingRequests(prev => prev.filter((_, j) => j !== i))} style={{ marginTop: '6px', background: 'none', border: 'none', color: '#dc2626', cursor: 'pointer', fontSize: '12px', fontWeight: '700' }}>Remove</button>}
+              </div>
+            ))}
+            <button onClick={() => setImagingRequests(prev => [...prev, { scan_type: '', body_part: '', clinical_info: '' }])}
+              style={{ padding: '7px 14px', borderRadius: '8px', border: '1px dashed #7c3aed', background: 'white', color: '#7c3aed', fontWeight: '700', fontSize: '12px', cursor: 'pointer' }}>+ Add Another Scan</button>
+          </div>
+        )}
+      </Card>
+
+      {/* Communication thread */}
+      {messages.length > 0 && (
+        <Card style={{ padding: '20px', marginBottom: '14px' }}>
+          <div style={{ fontSize: '15px', fontWeight: '800', marginBottom: '14px' }}>💬 Patient Communications</div>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', maxHeight: '200px', overflowY: 'auto' }}>
+            {messages.map(m => (
+              <div key={m.id} style={{ padding: '10px 14px', borderRadius: '10px', background: m.sender_role === 'Doctor' ? '#f5f3ff' : '#f0fdfa', border: '1px solid ' + (m.sender_role === 'Doctor' ? '#ddd6fe' : '#ccfbf1') }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '4px' }}>
+                  <span style={{ fontSize: '11px', fontWeight: '700', color: m.sender_role === 'Doctor' ? '#7c3aed' : TEALC }}>{m.sender_name} — {m.sender_role} ({m.department})</span>
+                  <span style={{ fontSize: '10px', color: '#aaa' }}>{m.created_at?.replace('T', ' ').slice(0, 16)}</span>
+                </div>
+                <div style={{ fontSize: '13px', color: '#333' }}>{m.message}</div>
+              </div>
+            ))}
+          </div>
+        </Card>
+      )}
+
       <button onClick={sendToPharmacy} disabled={saving}
         style={{ width: '100%', padding: '14px', borderRadius: '12px', border: 'none', background: 'linear-gradient(135deg,#0f766e,#14b8a6)', color: 'white', fontWeight: '800', fontSize: '15px', cursor: saving ? 'not-allowed' : 'pointer', opacity: saving ? 0.7 : 1 }}>
-        {saving ? 'Saving...' : meds.length > 0 ? 'Save & Send Prescription to Pharmacy →' : 'Save Consultation & Discharge →'}
+        {saving ? 'Saving...' : 'Save & Send to Selected Departments →'}
       </button>
       <Toast msg={msg} />
     </div>
@@ -164,16 +375,14 @@ export default function Doctor({ brand, products }) {
       <div style={{ fontSize: '56px', marginBottom: '16px' }}>✅</div>
       <div style={{ fontSize: '22px', fontWeight: '900', marginBottom: '8px' }}>Consultation Saved!</div>
       <div style={{ fontSize: '14px', color: '#888', marginBottom: '12px' }}>Patient: <strong>{selected.full_name}</strong></div>
-      {sentTo === 'at_pharmacy' ? (
-        <div style={{ display: 'inline-flex', gap: '8px', padding: '8px 16px', borderRadius: '20px', background: '#f0fdfa', border: '1px solid #ccfbf1', fontSize: '13px', color: '#0f766e', fontWeight: '700', marginBottom: '24px' }}>
-          💊 Prescription sent to Pharmacy inbox
-        </div>
-      ) : (
-        <div style={{ display: 'inline-flex', gap: '8px', padding: '8px 16px', borderRadius: '20px', background: '#f0fdf4', border: '1px solid #bbf7d0', fontSize: '13px', color: '#059669', fontWeight: '700', marginBottom: '24px' }}>
-          ✅ Patient discharged successfully
-        </div>
-      )}
-      <div><TealBtn onClick={() => { setSelected(null); setDone(false); setTriageData(null); load() }}>Back to Patient List</TealBtn></div>
+      <div style={{ fontSize: '13px', color: '#555', marginBottom: '8px' }}>Doctor: <strong>{staffName}</strong></div>
+      <div style={{ display: 'flex', gap: '8px', justifyContent: 'center', flexWrap: 'wrap', marginBottom: '24px' }}>
+        {sentTo.includes('pharmacy') && <div style={{ display: 'inline-flex', gap: '8px', padding: '8px 16px', borderRadius: '20px', background: '#f0fdfa', border: '1px solid #ccfbf1', fontSize: '13px', color: '#0f766e', fontWeight: '700' }}>💊 Prescription sent to Pharmacy</div>}
+        {sentTo.includes('lab') && <div style={{ display: 'inline-flex', gap: '8px', padding: '8px 16px', borderRadius: '20px', background: '#fefce8', border: '1px solid #fde047', fontSize: '13px', color: '#854d0e', fontWeight: '700' }}>🔬 Lab request sent</div>}
+        {sentTo.includes('imaging') && <div style={{ display: 'inline-flex', gap: '8px', padding: '8px 16px', borderRadius: '20px', background: '#f5f3ff', border: '1px solid #ddd6fe', fontSize: '13px', color: '#7c3aed', fontWeight: '700' }}>🩻 Imaging request sent</div>}
+        {sentTo.length === 0 && <div style={{ display: 'inline-flex', gap: '8px', padding: '8px 16px', borderRadius: '20px', background: '#f0fdf4', border: '1px solid #bbf7d0', fontSize: '13px', color: '#059669', fontWeight: '700' }}>✅ Patient discharged</div>}
+      </div>
+      <div><TealBtn onClick={() => { setSelected(null); setDone(false); setTriageData(null); setMessages([]); load() }}>Back to Patient List</TealBtn></div>
     </div>
   )
 
