@@ -39,11 +39,19 @@ export default function Inventory({ brand, products, setProducts, role, perms, l
 
   async function saveProduct(data, isEdit) {
     try {
+      const productData = {
+        ...data,
+        category: data.cat || data.category || 'Medicines',
+        price: parseFloat(data.price) || 0,
+        cost_price: parseFloat(data.cost_price) || 0,
+        stock: data.category === 'Services' ? 999 : parseInt(data.stock) || 0,
+        reorder_level: parseInt(data.reorder_level) || 5,
+      }
       if (isEdit) {
-        await updateProduct(data.id, data)
+        await updateProduct(data.id, productData)
         showToast('Product updated!')
       } else {
-        await addProduct({ ...data, business_id: brand.id })
+        await addProduct({ ...productData, business_id: brand.id })
         showToast('Product added!')
       }
       await reload()
@@ -100,12 +108,16 @@ export default function Inventory({ brand, products, setProducts, role, perms, l
           const cols = line.split(/,(?=(?:[^"]*"[^"]*")*[^"]*$)/).map(c => c.replace(/^"|"$/g, '').trim())
           if (!cols[0]) return null
           return {
-            name: cols[0] || '', generic_name: cols[1] || '', cat: cols[2] || 'Medicines',
-            price: parseFloat(cols[3]) || 0, cost_price: parseFloat(cols[4]) || 0,
+            name: cols[0] || '',
+            generic_name: cols[1] || '',
+            category: cols[2] || 'Medicines',
+            price: parseFloat(cols[3]) || 0,
+            cost_price: parseFloat(cols[4]) || 0,
             stock: cols[5] !== '' ? parseInt(cols[5]) || 0 : 999,
             reorder_level: parseInt(cols[6]) || 5,
-            barcode: cols[7] || '', list_on_carefind: (cols[8] || 'yes').toLowerCase() !== 'no',
-            emoji: '💊', category: cols[2] || 'Medicines',
+            barcode: cols[7] || '',
+            list_on_carefind: (cols[8] || 'yes').toLowerCase() !== 'no',
+            emoji: '💊',
           }
         }).filter(Boolean)
         if (parsed.length === 0) { setUploadError('No valid products found.'); return }
@@ -332,7 +344,7 @@ function ProductModal({ product, perms, onSave, onClose }) {
   const save = async () => {
     if (!form.name || !form.price) { alert('Please enter product name and selling price.'); return }
     setSaving(true)
-    await onSave({ ...form, price: parseFloat(form.price) || 0, cost_price: parseFloat(form.cost_price) || 0, stock: form.cat === 'Services' ? 999 : parseInt(form.stock) || 0, reorder_level: parseInt(form.reorder_level) || 5, category: form.cat })
+    await onSave({ ...form, price: parseFloat(form.price) || 0, cost_price: parseFloat(form.cost_price) || 0, stock: (form.cat || form.category) === 'Services' ? 999 : parseInt(form.stock) || 0, reorder_level: parseInt(form.reorder_level) || 5, category: form.cat || form.category || 'Medicines' })
     setSaving(false)
   }
 
