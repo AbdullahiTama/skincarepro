@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { addSale, updateSale, getSales, getTodaySales, getSettings, queueOfflineSale, getOfflineQueue } from '../../lib/supabase'
+import { addSale, updateSale, getSales, getTodaySales, getSettings, queueOfflineSale, getOfflineQueue, addDebt, updateDebt } from '../../lib/supabase'
 import { fmt, genId, todayDate, nowStr, TEAL, TEALC, DARK } from '../../lib/utils'
 import { Card, Modal, Pill, GhostBtn, TealBtn, DarkBtn, Inp, Sel, Avatar, Toast, useToast } from '../../components/ui'
 
@@ -113,9 +113,10 @@ export default function POS({ brand, products, setProducts, role, perms }) {
     const txnNo = genId('TXN')
     const amtPaid = parseFloat(creditAmountPaid) || 0
     const balance = total - amtPaid
+    const clientName = client || 'Walk-in'
     const saleData = {
       txn_no: txnNo,
-      client_name: client || 'Walk-in',
+      client_name: clientName,
       items: JSON.stringify(cart),
       subtotal: sub,
       discount: discAmt,
@@ -126,9 +127,27 @@ export default function POS({ brand, products, setProducts, role, perms }) {
       is_credit: true,
       is_on_hold: false,
     }
-    setReceipt({ id: txnNo, client: client || 'Walk-in', items: [...cart], subtotal: sub, disc: discAmt, total, method: 'Credit', amtPaid, balance })
+    setReceipt({ id: txnNo, client: clientName, items: [...cart], subtotal: sub, disc: discAmt, total, method: 'Credit', amtPaid, balance })
     setProducts(prev => prev.map(p => { const s = cart.find(c => c.id === p.id); return s && p.cat !== 'Services' ? { ...p, stock: Math.max(0, p.stock - s.qty) } : p }))
     await saveSale(saleData)
+    // AUTO-CREATE DEBT: credit sale automatically appears in debts as "Owes Us"
+    if (balance > 0 && brand?.id) {
+      try {
+        await addDebt({
+          business_id: brand.id,
+          direction: 'owes_us',
+          party_name: clientName,
+          amount: total,
+          amount_paid: amtPaid,
+          balance: balance,
+          due_date: '',
+          status: 'pending',
+          description: 'Credit sale — TXN: ' + txnNo,
+          source: 'credit_sale',
+          source_ref: txnNo,
+        })
+      } catch (e) {}
+    }
     loadSalesData()
   }
 
@@ -149,7 +168,7 @@ export default function POS({ brand, products, setProducts, role, perms }) {
       is_on_hold: true,
       notes: holdNote,
     })
-    showToast('Sale held — you can resume it from Held Sales')
+    showToast('Sale held — resume it from Held Sales')
     setShowHoldModal(false)
     setCart([])
     setClient('Walk-in')
@@ -157,12 +176,22 @@ export default function POS({ brand, products, setProducts, role, perms }) {
     loadSalesData()
   }
 
+  async function deleteHeldSale(sale) {
+    // Only Owner can delete held sales
+    if (role !== 'Owner') { showToast('Only the Owner can delete held sales'); return }
+    if (!window.confirm('Delete this held sale? This cannot be undone.')) return
+    try {
+      await updateSale(sale.id, { is_on_hold: false, status: 'deleted' })
+      showToast('Held sale deleted')
+      loadSalesData()
+    } catch (e) { showToast('Error deleting sale') }
+  }
+
   async function resumeHeld(sale) {
     let items = []
     try { items = JSON.parse(sale.items || '[]') } catch (e) {}
     setCart(items)
     setClient(sale.client_name || 'Walk-in')
-    // Delete the held sale
     try { await updateSale(sale.id, { is_on_hold: false, status: 'resumed' }) } catch (e) {}
     setView('pos')
     loadSalesData()
@@ -172,6 +201,14 @@ export default function POS({ brand, products, setProducts, role, perms }) {
     const newPaid = (sale.amount_paid || 0) + parseFloat(amount)
     const newBalance = sale.total - newPaid
     await updateSale(sale.id, { amount_paid: newPaid, balance: Math.max(0, newBalance), is_credit: newBalance > 0 })
+    // AUTO-UPDATE matching debt
+    try {
+      const debts = await import('../../lib/supabase').then(m => m.getDebts(brand.id))
+      const matchDebt = debts.find(d => d.source === 'credit_sale' && d.source_ref === sale.txn_no && d.status !== 'paid')
+      if (matchDebt) {
+        await updateDebt(matchDebt.id, { amount_paid: newPaid, balance: Math.max(0, newBalance), status: newBalance <= 0 ? 'paid' : 'pending' })
+      }
+    } catch (e) {}
     showToast('Payment collected!')
     loadSalesData()
   }
@@ -322,14 +359,24 @@ export default function POS({ brand, products, setProducts, role, perms }) {
           let items = []; try { items = JSON.parse(s.items || '[]') } catch (e) {}
           return (
             <Card key={s.id} style={{ padding: '16px', marginBottom: '12px' }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '12px', flexWrap: 'wrap' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '12px', flexWrap: 'wrap' }}>
                 <div>
                   <div style={{ fontWeight: '800', fontSize: '15px' }}>{s.client_name || 'Walk-in'}</div>
                   <div style={{ fontSize: '12px', color: '#888', marginTop: '2px' }}>{items.length} item(s) · {fmt(s.total)}</div>
-                  <div style={{ fontSize: '11px', color: '#aaa', marginTop: '2px' }}>{s.created_at?.split('T')[0]}</div>
+                  <div style={{ fontSize: '11px', color: '#aaa', marginTop: '2px' }}>{s.created_at?.replace('T', ' ').slice(0, 16)}</div>
+                  {s.notes && <div style={{ fontSize: '12px', color: '#555', marginTop: '4px', fontStyle: 'italic' }}>Note: {s.notes}</div>}
+                  <div style={{ marginTop: '8px', display: 'flex', flexWrap: 'wrap', gap: '4px' }}>
+                    {items.map((it, i) => <span key={i} style={{ fontSize: '11px', padding: '2px 8px', borderRadius: '6px', background: '#f0fdfa', color: '#0f766e', fontWeight: '600' }}>{it.name} ×{it.qty}</span>)}
+                  </div>
                 </div>
-                <div style={{ display: 'flex', gap: '8px' }}>
-                  <TealBtn onClick={() => resumeHeld(s)} style={{ padding: '8px 16px' }}>Resume Sale</TealBtn>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', alignItems: 'flex-end' }}>
+                  <TealBtn onClick={() => resumeHeld(s)} style={{ padding: '8px 16px' }}>▶ Resume Sale</TealBtn>
+                  {role === 'Owner' && (
+                    <button onClick={() => deleteHeldSale(s)}
+                      style={{ padding: '6px 12px', borderRadius: '8px', border: 'none', background: '#fef2f2', color: '#dc2626', fontWeight: '700', fontSize: '12px', cursor: 'pointer' }}>
+                      🗑️ Delete
+                    </button>
+                  )}
                 </div>
               </div>
             </Card>
