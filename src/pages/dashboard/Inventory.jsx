@@ -311,12 +311,12 @@ export default function Inventory({ brand, products, setProducts, role, perms, l
           {uploadError && <div style={{ padding: '12px', borderRadius: '10px', background: '#fef2f2', border: '1px solid #fecaca', fontSize: '13px', color: '#dc2626' }}>⚠️ {uploadError}</div>}
           {uploadData.length > 0 && (
             <div>
-              <div style={{ fontWeight: '700', color: '#059669', fontSize: '13px', marginBottom: '8px' }}>✅ {uploadData.length} products ready</div>
+              <div style={{ fontWeight: '700', color: '#059669', fontSize: '13px', marginBottom: '8px' }}>✅ {uploadData.length} products ready to import</div>
               <div style={{ maxHeight: '180px', overflowY: 'auto', borderRadius: '10px', border: '1px solid #f0f0f0' }}>
                 {uploadData.map((p, i) => (
                   <div key={i} style={{ display: 'flex', justifyContent: 'space-between', padding: '7px 12px', borderBottom: '1px solid #f9f9f9', fontSize: '12px' }}>
                     <span style={{ fontWeight: '600' }}>{p.name}</span>
-                    <span style={{ color: '#888' }}>{p.cat} · {fmt(p.price)} · {p.stock} units</span>
+                    <span style={{ color: '#888' }}>{p.category} · ₦{p.price} · {p.stock} units</span>
                   </div>
                 ))}
               </div>
@@ -324,7 +324,36 @@ export default function Inventory({ brand, products, setProducts, role, perms, l
           )}
           <div style={{ display: 'flex', gap: '10px' }}>
             <GhostBtn onClick={downloadTemplate} style={{ flex: 1, padding: '12px' }}>📥 Download Template</GhostBtn>
-            {uploadData.length > 0 && <TealBtn onClick={confirmUpload} style={{ flex: 1, padding: '12px' }}>Import {uploadData.length} Products</TealBtn>}
+            {uploadData.length > 0 && (
+              <button onClick={async () => {
+                showToast('Importing ' + uploadData.length + ' products...')
+                let count = 0
+                for (const p of uploadData) {
+                  try {
+                    await addProduct({
+                      name: p.name,
+                      generic_name: p.generic_name || '',
+                      category: p.category || 'Medicines',
+                      price: parseFloat(p.price) || 0,
+                      cost_price: parseFloat(p.cost_price) || 0,
+                      stock: parseInt(p.stock) || 0,
+                      reorder_level: parseInt(p.reorder_level) || 5,
+                      barcode: p.barcode || '',
+                      list_on_carefind: p.list_on_carefind !== false,
+                      emoji: '💊',
+                      business_id: brand.id,
+                    })
+                    count++
+                  } catch (e) { console.error('Error adding product:', p.name, e) }
+                }
+                await reload()
+                showToast(count + ' of ' + uploadData.length + ' products imported!')
+                setUploadData([])
+                setShowUpload(false)
+              }} style={{ flex: 1, padding: '12px', borderRadius: '12px', border: 'none', background: 'linear-gradient(135deg,#0f766e,#14b8a6)', color: 'white', fontWeight: '800', fontSize: '14px', cursor: 'pointer' }}>
+                Import {uploadData.length} Products
+              </button>
+            )}
           </div>
         </div>
       </Modal>
