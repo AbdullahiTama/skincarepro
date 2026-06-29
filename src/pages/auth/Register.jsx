@@ -1,8 +1,8 @@
 import { useState } from 'react'
 import { useNavigate, Link } from 'react-router-dom'
-import { registerBusiness } from '../../lib/supabase'
-import { Card, Inp, Sel, TealBtn, DarkBtn, GhostBtn, Toggle } from '../../components/ui'
-import { TEAL, DARK, BUSINESS_TYPES, NIG_STATES, businessIcon, businessName } from '../../lib/utils'
+import { registerBusiness } from '../../lib/supabase.js'
+import { Card, Inp, Sel, TealBtn, DarkBtn, GhostBtn, Toggle } from '../../components/ui/index.jsx'
+import { TEAL, DARK, BUSINESS_TYPES, NIG_STATES, businessIcon, businessName } from '../../lib/utils.js'
 
 export default function Register() {
   const [step, setStep] = useState(0)
