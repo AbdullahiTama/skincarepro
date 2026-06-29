@@ -1,6 +1,6 @@
 export const ROLES = {
   Owner: {
-    nav: ['dashboard','pos','inventory','clients','appointments','consultation','expenses','debts','purchases','staff','reports','settings','carefind','reception','triage','doctor','rx_inbox'],
+    nav: ['dashboard','pos','inventory','clients','appointments','consultation','expenses','debts','purchases','staff','reports','settings','carefind','reception','triage','doctor','rx_inbox','lab','imaging'],
     canEditPrice: true,
     canEditStock: true,
     canDelete: true,
@@ -104,7 +104,7 @@ export const ROLES = {
     label: 'Doctor',
   },
   'Lab Technician': {
-    nav: ['dashboard','clients'],
+    nav: ['dashboard','lab','clients'],
     canEditPrice: false,
     canEditStock: false,
     canDelete: false,
@@ -148,6 +148,8 @@ export const ALL_NAV_HOSPITAL = [
   ['triage', '🏥', 'Triage'],
   ['doctor', '👨‍⚕️', 'Doctor'],
   ['rx_inbox', '💊', 'Rx Inbox'],
+  ['lab', '🔬', 'Laboratory'],
+  ['imaging', '🩻', 'Imaging'],
   ['pos', '🛒', 'POS / Sales'],
   ['inventory', '📦', 'Inventory'],
   ['clients', '👥', 'Patients'],
