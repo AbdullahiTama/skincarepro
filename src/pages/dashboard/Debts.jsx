@@ -92,7 +92,7 @@ export default function Debts({ brand, role, perms }) {
             <table style={{ width: '100%', borderCollapse: 'collapse' }}>
               <thead>
                 <tr style={{ borderBottom: '1px solid #f5f5f5', background: '#fafafa' }}>
-                  {['Direction', 'Party', 'Amount', 'Paid', 'Balance', 'Due Date', 'Status', 'Action'].map(h => (
+                  {['Source', 'Direction', 'Party', 'Amount', 'Paid', 'Balance', 'Due Date', 'Status', 'Action'].map(h => (
                     <th key={h} style={{ padding: '12px 14px', textAlign: 'left', fontSize: '11px', fontWeight: '700', color: '#aaa', textTransform: 'uppercase', whiteSpace: 'nowrap' }}>{h}</th>
                   ))}
                 </tr>
@@ -100,6 +100,9 @@ export default function Debts({ brand, role, perms }) {
               <tbody>
                 {filtered.map(d => (
                   <tr key={d.id} style={{ borderBottom: '1px solid #f9f9f9' }}>
+                    <td style={{ padding: '12px 14px' }}>
+                      <Pill label={d.source === 'purchase' ? '🚚 Purchase' : d.source === 'credit_sale' ? '🛒 Credit Sale' : '✏️ Manual'} type={d.source === 'purchase' ? 'amber' : d.source === 'credit_sale' ? 'blue' : 'gray'} />
+                    </td>
                     <td style={{ padding: '12px 14px' }}><Pill label={d.direction === 'owes_us' ? 'Owed to Us' : 'We Owe'} type={d.direction === 'owes_us' ? 'green' : 'red'} /></td>
                     <td style={{ padding: '12px 14px', fontWeight: '700', fontSize: '13px' }}>{d.party_name}</td>
                     <td style={{ padding: '12px 14px', fontSize: '13px', fontWeight: '700' }}>{fmt(d.amount)}</td>
