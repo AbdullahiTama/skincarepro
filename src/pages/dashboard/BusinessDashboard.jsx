@@ -21,6 +21,7 @@ import Staff from './Staff'
 import Reports from './Reports'
 import Settings from './Settings'
 import CareFind from './CareFind'
+import Locations from './Locations'
 import Reception from './hospital/Reception'
 import Triage from './hospital/Triage'
 import Doctor from './hospital/Doctor'
@@ -123,6 +124,7 @@ export default function BusinessDashboard() {
             <Route path='reports' element={<><TopBar title='Reports' brand={brand} role={role} /><div style={{ padding: '24px' }}><Reports {...pageProps} /></div></>} />
             <Route path='settings' element={<><TopBar title='Settings' brand={brand} role={role} /><div style={{ padding: '24px' }}><Settings {...pageProps} /></div></>} />
             <Route path='carefind' element={<><TopBar title='CareFind Profile' brand={brand} role={role} /><div style={{ padding: '24px' }}><CareFind {...pageProps} /></div></>} />
+            <Route path='locations' element={<><TopBar title='Locations' brand={brand} role={role} /><div style={{ padding: '24px' }}><Locations {...pageProps} /></div></>} />
             <Route path='reception' element={<><TopBar title='Reception' brand={brand} role={role} /><div style={{ padding: '24px' }}><Reception {...pageProps} /></div></>} />
             <Route path='triage' element={<><TopBar title='Triage' brand={brand} role={role} /><div style={{ padding: '24px' }}><Triage {...pageProps} /></div></>} />
             <Route path='doctor' element={<><TopBar title='Doctor Consultation' brand={brand} role={role} /><div style={{ padding: '24px' }}><Doctor {...pageProps} /></div></>} />
