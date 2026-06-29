@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { TEAL, TEALC, DARK } from '../lib/utils'
+import { TEAL, TEALC, DARK } from '../../lib/utils'
 
 // ── PILL ─────────────────────────────────────────────────────────────────────
 export function Pill({ label, type = 'gray' }) {
