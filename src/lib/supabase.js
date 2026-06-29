@@ -35,6 +35,17 @@ export async function getBusinesses() { return sbFetch('businesses?select=*&orde
 export async function registerBusiness(data) { return sbFetch('businesses', { method: 'POST', body: JSON.stringify(data) }) }
 export async function updateBusiness(id, data) { return sbFetch('businesses?id=eq.' + id, { method: 'PATCH', body: JSON.stringify(data), prefer: 'return=minimal' }) }
 export async function getBranches(parentId) { return sbFetch('businesses?parent_business_id=eq.' + parentId + '&select=*') }
+export async function addBranch(data) { return sbFetch('businesses', { method: 'POST', body: JSON.stringify(data) }) }
+export async function getAllLocations(mainBusinessId) {
+  // Returns main business + all its branches
+  const main = await getBusinessById(mainBusinessId)
+  if (!main) return []
+  // If this business itself is a branch, find the real parent
+  const parentId = main.parent_business_id || mainBusinessId
+  const parent = main.parent_business_id ? await getBusinessById(parentId) : main
+  const branches = await getBranches(parentId)
+  return parent ? [parent, ...branches] : branches
+}
 
 // STAFF
 export async function getStaff(businessId) { return sbFetch('staff?business_id=eq.' + businessId + '&order=created_at.desc&select=*') }
