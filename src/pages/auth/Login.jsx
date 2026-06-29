@@ -1,9 +1,9 @@
 import { useState } from 'react'
 import { useNavigate, Link } from 'react-router-dom'
-import { useAuth } from '../../App'
-import { loginBusiness, loginStaff, getBusinessById } from '../../lib/supabase'
-import { Card, Inp, TealBtn } from '../../components/ui'
-import { TEAL, DARK } from '../../lib/utils'
+import { useAuth } from '../../App.jsx'
+import { loginBusiness, loginStaff, getBusinessById } from '../../lib/supabase.js'
+import { Card, Inp, TealBtn } from '../../components/ui/index.jsx'
+import { TEAL, DARK } from '../../lib/utils.js'
 
 const ADMIN_EMAIL = 'admin@carehub.ng'
 const ADMIN_PASS = 'Admin@2025'
