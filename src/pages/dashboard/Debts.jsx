@@ -92,7 +92,7 @@ export default function Debts({ brand, role, perms }) {
             <table style={{ width: '100%', borderCollapse: 'collapse' }}>
               <thead>
                 <tr style={{ borderBottom: '1px solid #f5f5f5', background: '#fafafa' }}>
-                  {['Source', 'Direction', 'Party', 'Amount', 'Paid', 'Balance', 'Due Date', 'Status', 'Action'].map(h => (
+                  {['Source', 'Direction', 'Party', 'Details', 'Amount', 'Paid', 'Balance', 'Due Date', 'Status', 'Action'].map(h => (
                     <th key={h} style={{ padding: '12px 14px', textAlign: 'left', fontSize: '11px', fontWeight: '700', color: '#aaa', textTransform: 'uppercase', whiteSpace: 'nowrap' }}>{h}</th>
                   ))}
                 </tr>
@@ -105,6 +105,10 @@ export default function Debts({ brand, role, perms }) {
                     </td>
                     <td style={{ padding: '12px 14px' }}><Pill label={d.direction === 'owes_us' ? 'Owed to Us' : 'We Owe'} type={d.direction === 'owes_us' ? 'green' : 'red'} /></td>
                     <td style={{ padding: '12px 14px', fontWeight: '700', fontSize: '13px' }}>{d.party_name}</td>
+                    <td style={{ padding: '12px 14px', fontSize: '12px', color: '#888', maxWidth: '200px' }}>
+                      <div style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{d.description || '—'}</div>
+                      {d.source && <div style={{ marginTop: '4px' }}><Pill label={d.source === 'purchase' ? '🚚 Purchase' : d.source === 'credit_sale' ? '🛒 Sale' : '✏️ Manual'} type={d.source === 'purchase' ? 'amber' : d.source === 'credit_sale' ? 'blue' : 'gray'} /></div>}
+                    </td>
                     <td style={{ padding: '12px 14px', fontSize: '13px', fontWeight: '700' }}>{fmt(d.amount)}</td>
                     <td style={{ padding: '12px 14px', fontSize: '13px', color: '#059669' }}>{fmt(d.amount_paid || 0)}</td>
                     <td style={{ padding: '12px 14px', fontSize: '13px', fontWeight: '900', color: (d.balance || 0) > 0 ? '#dc2626' : '#059669' }}>{fmt(d.balance || 0)}</td>
