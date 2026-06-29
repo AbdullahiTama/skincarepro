@@ -25,6 +25,8 @@ import Reception from './hospital/Reception'
 import Triage from './hospital/Triage'
 import Doctor from './hospital/Doctor'
 import RxInbox from './hospital/RxInbox'
+import Lab from './hospital/Lab'
+import Imaging from './hospital/Imaging'
 import ConsultationRouter from './ConsultationRouter'
 
 const PAGE_TITLES = {
@@ -125,6 +127,8 @@ export default function BusinessDashboard() {
             <Route path='triage' element={<><TopBar title='Triage' brand={brand} role={role} /><div style={{ padding: '24px' }}><Triage {...pageProps} /></div></>} />
             <Route path='doctor' element={<><TopBar title='Doctor Consultation' brand={brand} role={role} /><div style={{ padding: '24px' }}><Doctor {...pageProps} /></div></>} />
             <Route path='rx_inbox' element={<><TopBar title='Prescription Inbox' brand={brand} role={role} /><div style={{ padding: '24px' }}><RxInbox {...pageProps} /></div></>} />
+            <Route path='lab' element={<><TopBar title='Laboratory' brand={brand} role={role} /><div style={{ padding: '24px' }}><Lab {...pageProps} /></div></>} />
+            <Route path='imaging' element={<><TopBar title='Imaging / Radiology' brand={brand} role={role} /><div style={{ padding: '24px' }}><Imaging {...pageProps} /></div></>} />
             <Route path='*' element={<Navigate to='dashboard' />} />
           </Routes>
         </div>
