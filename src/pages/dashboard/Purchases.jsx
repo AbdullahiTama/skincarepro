@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { getPurchases, addPurchase, updatePurchase } from '../../lib/supabase'
+import { getPurchases, addPurchase, updatePurchase, addDebt, updateDebt, getDebts } from '../../lib/supabase'
 import { fmt, todayDate } from '../../lib/utils'
 import { Card, StatCard, SectionHead, Modal, Pill, Inp, Sel, Textarea, GhostBtn, TealBtn, Loading, Empty, useToast, Toast } from '../../components/ui'
 
@@ -29,7 +29,8 @@ export default function Purchases({ brand, role, perms }) {
     try {
       const total = parseFloat(form.totalCost) || 0
       const paid = parseFloat(form.amountPaid) || 0
-      await addPurchase({
+      const balance = total - paid
+      const purchase = await addPurchase({
         business_id: brand.id,
         supplier_name: form.supplier,
         product_name: form.product || '',
@@ -37,20 +38,47 @@ export default function Purchases({ brand, role, perms }) {
         cost_price: parseFloat(form.costPrice) || 0,
         total_cost: total,
         amount_paid: paid,
-        balance: total - paid,
+        balance: balance,
         supply_date: form.supplyDate || todayDate(),
         due_date: form.dueDate || '',
         status: paid >= total ? 'paid' : 'pending',
         notes: form.notes || '',
       })
-      showToast('Purchase recorded!')
+      // AUTO-CREATE DEBT: if there is a balance, create a "We Owe" debt automatically
+      if (balance > 0) {
+        await addDebt({
+          business_id: brand.id,
+          direction: 'we_owe',
+          party_name: form.supplier,
+          amount: total,
+          amount_paid: paid,
+          balance: balance,
+          due_date: form.dueDate || '',
+          status: 'pending',
+          description: 'Purchase — ' + (form.product || 'Stock') + ' — Due: ' + (form.dueDate || 'Not set'),
+          source: 'purchase',
+          source_ref: (purchase[0] || {}).id || '',
+        })
+      }
+      showToast('Purchase recorded!' + (balance > 0 ? ' Debt of ' + fmt(balance) + ' added to Debts automatically.' : ''))
       setForm({ supplyDate: todayDate() }); setShowAdd(false); load()
     } catch (e) { alert('Error saving purchase.') }
     setSaving(false)
   }
 
   async function markPaid(p) {
-    try { await updatePurchase(p.id, { amount_paid: p.total_cost, balance: 0, status: 'paid' }); load(); showToast('Marked as paid!') } catch (e) {}
+    try {
+      await updatePurchase(p.id, { amount_paid: p.total_cost, balance: 0, status: 'paid' })
+      // AUTO-UPDATE DEBT: find matching debt and mark as paid
+      try {
+        const debts = await getDebts(brand.id)
+        const matchDebt = debts.find(d => d.source === 'purchase' && d.source_ref === p.id && d.status !== 'paid')
+        if (matchDebt) {
+          await updateDebt(matchDebt.id, { amount_paid: p.total_cost, balance: 0, status: 'paid' })
+        }
+      } catch (e) {}
+      load(); showToast('Marked as paid! Debt updated automatically.')
+    } catch (e) {}
   }
 
   const filtered = purchases.filter(p => {
