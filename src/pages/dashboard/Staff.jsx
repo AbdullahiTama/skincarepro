@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react'
 import { getStaff, addStaff, updateStaff, deleteStaff } from '../../lib/supabase'
+import { emailStaffWelcome } from '../../lib/email'
 import { ROLE_LIST } from '../../lib/permissions'
 import { Card, StatCard, SectionHead, Modal, Pill, Inp, Sel, GhostBtn, TealBtn, RedBtn, Avatar, Loading, Empty, useToast, Toast } from '../../components/ui'
 
@@ -34,7 +35,17 @@ export default function Staff({ brand, role, perms }) {
         phone: form.phone || '',
         status: 'active',
       })
-      showToast('Staff member added!')
+      // Send welcome email to staff
+      try {
+        await emailStaffWelcome({
+          staffName: form.fullName,
+          staffEmail: form.email,
+          businessName: brand.name,
+          role: form.role,
+          password: form.password,
+        })
+      } catch (e) {}
+      showToast('Staff member added! Welcome email sent.')
       setForm({}); setShowAdd(false); load()
     } catch (e) { alert('Error. Email may already be registered.') }
     setSaving(false)
