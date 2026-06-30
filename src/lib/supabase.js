@@ -13,6 +13,11 @@ async function sbFetch(path, options = {}) {
     body: options.body || undefined,
   })
   const text = await res.text()
+  if (!res.ok) {
+    let detail = text
+    try { detail = JSON.parse(text).message || text } catch (e) {}
+    throw new Error('Supabase error (' + res.status + '): ' + detail)
+  }
   return text ? JSON.parse(text) : []
 }
 
