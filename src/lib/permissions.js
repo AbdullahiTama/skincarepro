@@ -1,6 +1,6 @@
 export const ROLES = {
   Owner: {
-    nav: ['dashboard','pos','inventory','clients','appointments','consultation','expenses','debts','purchases','staff','reports','settings','carefind','reception','triage','doctor','rx_inbox','lab','imaging'],
+    nav: ['dashboard','pos','inventory','clients','appointments','consultation','expenses','debts','purchases','staff','reports','settings','carefind','locations','reception','triage','doctor','rx_inbox','lab','imaging'],
     canEditPrice: true,
     canEditStock: true,
     canDelete: true,
@@ -137,6 +137,7 @@ export const ALL_NAV_DEFAULT = [
   ['debts', '🏦', 'Debts'],
   ['purchases', '🚚', 'Purchases'],
   ['carefind', '🔍', 'CareFind Profile'],
+  ['locations', '🏢', 'Locations'],
   ['staff', '👤', 'Staff'],
   ['reports', '📊', 'Reports'],
   ['settings', '⚙️', 'Settings'],
@@ -157,6 +158,7 @@ export const ALL_NAV_HOSPITAL = [
   ['debts', '🏦', 'Debts'],
   ['purchases', '🚚', 'Purchases'],
   ['carefind', '🔍', 'CareFind Profile'],
+  ['locations', '🏢', 'Locations'],
   ['staff', '👤', 'Staff'],
   ['reports', '📊', 'Reports'],
   ['settings', '⚙️', 'Settings'],
