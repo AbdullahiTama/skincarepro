@@ -310,11 +310,13 @@ export default function Inventory({ brand, products, setProducts, role, perms, l
   return (
     <div>
       <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: '20px', flexWrap: 'wrap', gap: '10px' }}>
-        <div><div style={{ fontSize: '20px', fontWeight: '900', color: '#111' }}>Inventory</div><div style={{ fontSize: '13px', color: '#888', marginTop: '3px' }}>Manage products, stock and CareFind listings</div></div>
+        <div><div style={{ fontSize: '20px', fontWeight: '900', color: '#111' }}>Inventory</div><div style={{ fontSize: '13px', color: '#888', marginTop: '3px' }}>Manage products, stock and CareFind listings</div>
+          <div style={{ fontSize: '11px', color: '#bbb', marginTop: '4px' }}>Debug: {products.length} products loaded · {duplicateGroups.length} duplicate group(s) detected · {totalDuplicateItems} duplicate item(s)</div>
+        </div>
         <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
           <button onClick={downloadTemplate} style={{ padding: '9px 14px', borderRadius: '10px', border: '1px solid #e5e7eb', background: 'white', color: '#059669', fontWeight: '700', fontSize: '12px', cursor: 'pointer' }}>📥 Template</button>
           <button onClick={() => setShowUpload(true)} style={{ padding: '9px 14px', borderRadius: '10px', border: '1px solid #e5e7eb', background: 'white', color: '#2563eb', fontWeight: '700', fontSize: '12px', cursor: 'pointer' }}>📤 Upload CSV</button>
-          {totalDuplicateItems > 0 && perms?.canEditStock && (
+          {totalDuplicateItems > 0 && (
             <button onClick={() => setShowCleanup(true)} style={{ padding: '9px 14px', borderRadius: '10px', border: '1px solid #fcd34d', background: '#fffbeb', color: '#d97706', fontWeight: '700', fontSize: '12px', cursor: 'pointer' }}>
               ⚠️ Clean Up {totalDuplicateItems} Duplicate{totalDuplicateItems > 1 ? 's' : ''}
             </button>
