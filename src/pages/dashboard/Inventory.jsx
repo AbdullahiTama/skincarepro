@@ -3,6 +3,30 @@ import { getProducts, addProduct, updateProduct, deleteProduct } from '../../lib
 import { fmt, todayDate, TEAL, TEALC, PRODUCT_CATS, PRODUCT_EMOJIS } from '../../lib/utils'
 import { Card, StatCard, SectionHead, Modal, Pill, Inp, Sel, Textarea, Toggle, GhostBtn, TealBtn, RedBtn, Loading, Empty, useToast, Toast } from '../../components/ui'
 
+// Normalize text for duplicate comparison — lowercase, trim, collapse spaces, strip punctuation
+function normalize(str) {
+  return (str || '')
+    .toLowerCase()
+    .trim()
+    .replace(/[^\w\s]/g, '')
+    .replace(/\s+/g, ' ')
+}
+
+// Find an existing product that matches by brand name OR generic name (normalized)
+function findDuplicate(existingProducts, name, genericName, excludeId) {
+  const nName = normalize(name)
+  const nGeneric = normalize(genericName)
+  if (!nName && !nGeneric) return null
+  return existingProducts.find(p => {
+    if (excludeId && p.id === excludeId) return false
+    const pName = normalize(p.name)
+    const pGeneric = normalize(p.generic_name || p.genericName)
+    const nameMatch = nName && pName && nName === pName
+    const genericMatch = nGeneric && pGeneric && nGeneric === pGeneric
+    return nameMatch || genericMatch
+  }) || null
+}
+
 export default function Inventory({ brand, products, setProducts, role, perms, loadProducts }) {
   const [loading, setLoading] = useState(false)
   const [search, setSearch] = useState('')
@@ -14,6 +38,7 @@ export default function Inventory({ brand, products, setProducts, role, perms, l
   const [uploadData, setUploadData] = useState([])
   const [uploadError, setUploadError] = useState('')
   const [scanning, setScanning] = useState(false)
+  const [duplicateWarning, setDuplicateWarning] = useState(null)
   const { msg: toastMsg, show: showToast } = useToast()
 
   const cats = ['All', ...Array.from(new Set(products.map(p => p.cat || p.category)))]
@@ -47,6 +72,16 @@ export default function Inventory({ brand, products, setProducts, role, perms, l
         stock: data.category === 'Services' ? 999 : parseInt(data.stock) || 0,
         reorder_level: parseInt(data.reorder_level) || 5,
       }
+
+      if (!isEdit) {
+        // Check for existing duplicate by brand name or generic name
+        const dupe = findDuplicate(products, productData.name, productData.generic_name)
+        if (dupe) {
+          setDuplicateWarning({ existing: dupe, incoming: productData })
+          return
+        }
+      }
+
       if (isEdit) {
         await updateProduct(data.id, productData)
         showToast('Product updated!')
@@ -59,6 +94,28 @@ export default function Inventory({ brand, products, setProducts, role, perms, l
       console.error(e)
       showToast('Error saving product — ' + (e.message || 'Please try again'))
     }
+  }
+
+  // Called when user confirms they want to update the existing duplicate instead of creating new
+  async function updateExistingFromDuplicate() {
+    if (!duplicateWarning) return
+    try {
+      const { existing, incoming } = duplicateWarning
+      await updateProduct(existing.id, {
+        price: incoming.price,
+        cost_price: incoming.cost_price,
+        stock: (existing.stock || 0) + (incoming.stock || 0),
+        reorder_level: incoming.reorder_level,
+        category: incoming.category,
+        barcode: incoming.barcode || existing.barcode,
+        list_on_carefind: incoming.list_on_carefind,
+      })
+      showToast('Existing product updated — stock combined!')
+      setDuplicateWarning(null)
+      setShowAdd(false)
+      setEditItem(null)
+      await reload()
+    } catch (e) { showToast('Error updating product') }
   }
 
   async function handleDelete(id) {
@@ -311,14 +368,26 @@ export default function Inventory({ brand, products, setProducts, role, perms, l
           {uploadError && <div style={{ padding: '12px', borderRadius: '10px', background: '#fef2f2', border: '1px solid #fecaca', fontSize: '13px', color: '#dc2626' }}>⚠️ {uploadError}</div>}
           {uploadData.length > 0 && (
             <div>
-              <div style={{ fontWeight: '700', color: '#059669', fontSize: '13px', marginBottom: '8px' }}>✅ {uploadData.length} products ready to import</div>
+              <div style={{ fontWeight: '700', color: '#059669', fontSize: '13px', marginBottom: '8px' }}>
+                ✅ {uploadData.length} products in file
+                {uploadData.filter(p => findDuplicate(products, p.name, p.generic_name)).length > 0 && (
+                  <span style={{ color: '#d97706', fontWeight: '600' }}> · {uploadData.filter(p => findDuplicate(products, p.name, p.generic_name)).length} already exist (will be skipped)</span>
+                )}
+              </div>
               <div style={{ maxHeight: '180px', overflowY: 'auto', borderRadius: '10px', border: '1px solid #f0f0f0' }}>
-                {uploadData.map((p, i) => (
-                  <div key={i} style={{ display: 'flex', justifyContent: 'space-between', padding: '7px 12px', borderBottom: '1px solid #f9f9f9', fontSize: '12px' }}>
-                    <span style={{ fontWeight: '600' }}>{p.name}</span>
-                    <span style={{ color: '#888' }}>{p.category} · ₦{p.price} · {p.stock} units</span>
-                  </div>
-                ))}
+                {uploadData.map((p, i) => {
+                  const isDupe = !!findDuplicate(products, p.name, p.generic_name)
+                  return (
+                    <div key={i} style={{ display: 'flex', justifyContent: 'space-between', padding: '7px 12px', borderBottom: '1px solid #f9f9f9', fontSize: '12px', background: isDupe ? '#fffbeb' : 'transparent' }}>
+                      <span style={{ fontWeight: '600', color: isDupe ? '#d97706' : '#111' }}>
+                        {isDupe && '⚠️ '}{p.name}
+                      </span>
+                      <span style={{ color: isDupe ? '#d97706' : '#888' }}>
+                        {isDupe ? 'Already exists' : p.category + ' · ₦' + p.price + ' · ' + p.stock + ' units'}
+                      </span>
+                    </div>
+                  )
+                })}
               </div>
             </div>
           )}
@@ -327,8 +396,16 @@ export default function Inventory({ brand, products, setProducts, role, perms, l
             {uploadData.length > 0 && (
               <button onClick={async () => {
                 showToast('Importing ' + uploadData.length + ' products...')
-                let count = 0
+                let added = 0
+                let skipped = 0
+                const skippedNames = []
                 for (const p of uploadData) {
+                  const dupe = findDuplicate(products, p.name, p.generic_name)
+                  if (dupe) {
+                    skipped++
+                    skippedNames.push(p.name)
+                    continue
+                  }
                   try {
                     await addProduct({
                       name: p.name,
@@ -343,11 +420,15 @@ export default function Inventory({ brand, products, setProducts, role, perms, l
                       emoji: '💊',
                       business_id: brand.id,
                     })
-                    count++
+                    added++
                   } catch (e) { console.error('Error adding product:', p.name, e) }
                 }
                 await reload()
-                showToast(count + ' of ' + uploadData.length + ' products imported!')
+                if (skipped > 0) {
+                  showToast(added + ' added · ' + skipped + ' skipped (already exist): ' + skippedNames.slice(0, 3).join(', ') + (skippedNames.length > 3 ? '...' : ''))
+                } else {
+                  showToast(added + ' of ' + uploadData.length + ' products imported!')
+                }
                 setUploadData([])
                 setShowUpload(false)
               }} style={{ flex: 1, padding: '12px', borderRadius: '12px', border: 'none', background: 'linear-gradient(135deg,#0f766e,#14b8a6)', color: 'white', fontWeight: '800', fontSize: '14px', cursor: 'pointer' }}>
@@ -356,6 +437,48 @@ export default function Inventory({ brand, products, setProducts, role, perms, l
             )}
           </div>
         </div>
+      </Modal>
+
+      {/* Duplicate Product Warning */}
+      <Modal show={!!duplicateWarning} onClose={() => setDuplicateWarning(null)} title='Product Already Exists'>
+        {duplicateWarning && (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+            <div style={{ padding: '14px', borderRadius: '12px', background: '#fffbeb', border: '1px solid #fcd34d', fontSize: '13px', color: '#92400e', lineHeight: '1.7' }}>
+              ⚠️ A product with this name or generic name is already in your inventory. You can update the existing product instead of creating a duplicate.
+            </div>
+
+            <div style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
+              <div style={{ flex: 1, padding: '12px', borderRadius: '10px', border: '1px solid #f0f0f0', background: '#fafafa' }}>
+                <div style={{ fontSize: '10px', fontWeight: '700', color: '#aaa', marginBottom: '6px' }}>EXISTING IN INVENTORY</div>
+                <div style={{ fontWeight: '700', fontSize: '14px' }}>{duplicateWarning.existing.emoji || '📦'} {duplicateWarning.existing.name}</div>
+                {(duplicateWarning.existing.generic_name || duplicateWarning.existing.genericName) && (
+                  <div style={{ fontSize: '12px', color: '#888', marginTop: '2px' }}>{duplicateWarning.existing.generic_name || duplicateWarning.existing.genericName}</div>
+                )}
+                <div style={{ fontSize: '13px', fontWeight: '700', color: TEALC, marginTop: '6px' }}>{fmt(duplicateWarning.existing.price)}</div>
+                <div style={{ fontSize: '12px', color: '#888' }}>{duplicateWarning.existing.stock} in stock</div>
+              </div>
+              <div style={{ fontSize: '18px', color: '#ccc' }}>→</div>
+              <div style={{ flex: 1, padding: '12px', borderRadius: '10px', border: '1px solid #ccfbf1', background: '#f0fdfa' }}>
+                <div style={{ fontSize: '10px', fontWeight: '700', color: '#0f766e', marginBottom: '6px' }}>YOU'RE ADDING</div>
+                <div style={{ fontWeight: '700', fontSize: '14px' }}>{duplicateWarning.incoming.name}</div>
+                {duplicateWarning.incoming.generic_name && (
+                  <div style={{ fontSize: '12px', color: '#888', marginTop: '2px' }}>{duplicateWarning.incoming.generic_name}</div>
+                )}
+                <div style={{ fontSize: '13px', fontWeight: '700', color: TEALC, marginTop: '6px' }}>{fmt(duplicateWarning.incoming.price)}</div>
+                <div style={{ fontSize: '12px', color: '#888' }}>+{duplicateWarning.incoming.stock} units</div>
+              </div>
+            </div>
+
+            <div style={{ padding: '10px 14px', borderRadius: '10px', background: '#f9fafb', fontSize: '12px', color: '#555' }}>
+              Updating will combine stock ({duplicateWarning.existing.stock} + {duplicateWarning.incoming.stock} = {(duplicateWarning.existing.stock || 0) + (duplicateWarning.incoming.stock || 0)} units) and apply the new price you entered.
+            </div>
+
+            <div style={{ display: 'flex', gap: '10px' }}>
+              <GhostBtn onClick={() => setDuplicateWarning(null)} style={{ flex: 1, padding: '12px' }}>Cancel</GhostBtn>
+              <TealBtn onClick={updateExistingFromDuplicate} style={{ flex: 1, padding: '12px' }}>Update Existing Product</TealBtn>
+            </div>
+          </div>
+        )}
       </Modal>
 
       <Toast msg={toastMsg} />
