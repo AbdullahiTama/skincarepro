@@ -58,6 +58,11 @@ export async function getProducts(businessId) { return sbFetch('products?busines
 export async function addProduct(data) { return sbFetch('products', { method: 'POST', body: JSON.stringify(data) }) }
 export async function updateProduct(id, data) { return sbFetch('products?id=eq.' + id, { method: 'PATCH', body: JSON.stringify(data), prefer: 'return=minimal' }) }
 export async function deleteProduct(id) { return sbFetch('products?id=eq.' + id, { method: 'DELETE', prefer: 'return=minimal' }) }
+export async function deleteProductsBulk(ids) {
+  if (!ids || ids.length === 0) return
+  // Supabase REST supports filtering on id with the "in" operator — one request for many rows
+  return sbFetch('products?id=in.(' + ids.join(',') + ')', { method: 'DELETE', prefer: 'return=minimal' })
+}
 
 // SALES
 export async function getSales(businessId, filters = {}) {
