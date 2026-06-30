@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { getProducts, addProduct, updateProduct, deleteProduct } from '../../lib/supabase'
+import { getProducts, addProduct, updateProduct, deleteProduct, deleteProductsBulk } from '../../lib/supabase'
 import { fmt, todayDate, TEAL, TEALC, PRODUCT_CATS, PRODUCT_EMOJIS } from '../../lib/utils'
 import { Card, StatCard, SectionHead, Modal, Pill, Inp, Sel, Textarea, Toggle, GhostBtn, TealBtn, RedBtn, Loading, Empty, useToast, Toast } from '../../components/ui'
 
@@ -154,46 +154,44 @@ export default function Inventory({ brand, products, setProducts, role, perms, l
     } catch (e) { showToast('Error updating product') }
   }
 
-  // Merge one group of duplicates: keep the item with the most complete data (or first one),
-  // combine all stock into it, delete the rest
-  async function mergeGroup(group) {
-    // Pick the "keeper" — prefer the one with a cost_price set, then the one with more stock, then the first
-    const keeper = [...group].sort((a, b) => {
-      const aScore = (a.cost_price > 0 ? 2 : 0) + (a.barcode ? 1 : 0)
-      const bScore = (b.cost_price > 0 ? 2 : 0) + (b.barcode ? 1 : 0)
-      if (aScore !== bScore) return bScore - aScore
-      return (b.stock || 0) - (a.stock || 0)
-    })[0]
-    const others = group.filter(p => p.id !== keeper.id)
-    const combinedStock = group.reduce((s, p) => s + (p.stock || 0), 0)
-    try {
-      await updateProduct(keeper.id, { stock: combinedStock })
-      for (const o of others) {
-        await deleteProduct(o.id)
-      }
-      return true
-    } catch (e) {
-      console.error('Error merging group:', e)
-      return false
-    }
-  }
-
-  // Merge ALL detected duplicate groups in one go
+  // Merge ALL detected duplicate groups in one go — fast version:
+  // updates run in parallel, all deletes happen in a single bulk request at the end
   async function mergeAllDuplicates() {
     setCleaningUp(true)
-    let mergedGroups = 0
-    let removedItems = 0
-    for (const group of duplicateGroups) {
-      const ok = await mergeGroup(group)
-      if (ok) {
-        mergedGroups++
-        removedItems += group.length - 1
+    try {
+      const idsToDelete = []
+      const updatePromises = []
+
+      for (const group of duplicateGroups) {
+        // Pick the "keeper" — prefer the one with a cost_price set, then the one with more stock, then the first
+        const keeper = [...group].sort((a, b) => {
+          const aScore = (a.cost_price > 0 ? 2 : 0) + (a.barcode ? 1 : 0)
+          const bScore = (b.cost_price > 0 ? 2 : 0) + (b.barcode ? 1 : 0)
+          if (aScore !== bScore) return bScore - aScore
+          return (b.stock || 0) - (a.stock || 0)
+        })[0]
+        const others = group.filter(p => p.id !== keeper.id)
+        const combinedStock = group.reduce((s, p) => s + (p.stock || 0), 0)
+
+        updatePromises.push(updateProduct(keeper.id, { stock: combinedStock }))
+        others.forEach(o => idsToDelete.push(o.id))
       }
+
+      // Run all the keeper stock updates in parallel
+      await Promise.all(updatePromises)
+      // Delete every duplicate "loser" product in one single bulk request
+      if (idsToDelete.length > 0) {
+        await deleteProductsBulk(idsToDelete)
+      }
+
+      await reload()
+      showToast('Cleaned up ' + duplicateGroups.length + ' duplicate group(s) — removed ' + idsToDelete.length + ' duplicate item(s)')
+    } catch (e) {
+      console.error('Error during cleanup:', e)
+      showToast('Error during cleanup — please try again')
     }
-    await reload()
     setCleaningUp(false)
     setShowCleanup(false)
-    showToast('Cleaned up ' + mergedGroups + ' duplicate group(s) — removed ' + removedItems + ' duplicate item(s)')
   }
 
   async function handleDelete(id) {
@@ -310,9 +308,7 @@ export default function Inventory({ brand, products, setProducts, role, perms, l
   return (
     <div>
       <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: '20px', flexWrap: 'wrap', gap: '10px' }}>
-        <div><div style={{ fontSize: '20px', fontWeight: '900', color: '#111' }}>Inventory</div><div style={{ fontSize: '13px', color: '#888', marginTop: '3px' }}>Manage products, stock and CareFind listings</div>
-          <div style={{ fontSize: '11px', color: '#bbb', marginTop: '4px' }}>Debug: {products.length} products loaded · {duplicateGroups.length} duplicate group(s) detected · {totalDuplicateItems} duplicate item(s)</div>
-        </div>
+        <div><div style={{ fontSize: '20px', fontWeight: '900', color: '#111' }}>Inventory</div><div style={{ fontSize: '13px', color: '#888', marginTop: '3px' }}>Manage products, stock and CareFind listings</div></div>
         <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
           <button onClick={downloadTemplate} style={{ padding: '9px 14px', borderRadius: '10px', border: '1px solid #e5e7eb', background: 'white', color: '#059669', fontWeight: '700', fontSize: '12px', cursor: 'pointer' }}>📥 Template</button>
           <button onClick={() => setShowUpload(true)} style={{ padding: '9px 14px', borderRadius: '10px', border: '1px solid #e5e7eb', background: 'white', color: '#2563eb', fontWeight: '700', fontSize: '12px', cursor: 'pointer' }}>📤 Upload CSV</button>
