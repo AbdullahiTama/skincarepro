@@ -27,6 +27,37 @@ function findDuplicate(existingProducts, name, genericName, excludeId) {
   }) || null
 }
 
+// Scan the full product list and group items that match each other by name or generic name.
+// Returns an array of groups, each group is an array of 2+ products considered duplicates of each other.
+function findAllDuplicateGroups(allProducts) {
+  const visited = new Set()
+  const groups = []
+  for (let i = 0; i < allProducts.length; i++) {
+    const a = allProducts[i]
+    if (visited.has(a.id)) continue
+    const nNameA = normalize(a.name)
+    const nGenericA = normalize(a.generic_name || a.genericName)
+    const group = [a]
+    for (let j = i + 1; j < allProducts.length; j++) {
+      const b = allProducts[j]
+      if (visited.has(b.id)) continue
+      const nNameB = normalize(b.name)
+      const nGenericB = normalize(b.generic_name || b.genericName)
+      const nameMatch = nNameA && nNameB && nNameA === nNameB
+      const genericMatch = nGenericA && nGenericB && nGenericA === nGenericB
+      if (nameMatch || genericMatch) {
+        group.push(b)
+        visited.add(b.id)
+      }
+    }
+    if (group.length > 1) {
+      visited.add(a.id)
+      groups.push(group)
+    }
+  }
+  return groups
+}
+
 export default function Inventory({ brand, products, setProducts, role, perms, loadProducts }) {
   const [loading, setLoading] = useState(false)
   const [search, setSearch] = useState('')
@@ -39,7 +70,12 @@ export default function Inventory({ brand, products, setProducts, role, perms, l
   const [uploadError, setUploadError] = useState('')
   const [scanning, setScanning] = useState(false)
   const [duplicateWarning, setDuplicateWarning] = useState(null)
+  const [showCleanup, setShowCleanup] = useState(false)
+  const [cleaningUp, setCleaningUp] = useState(false)
   const { msg: toastMsg, show: showToast } = useToast()
+
+  const duplicateGroups = findAllDuplicateGroups(products)
+  const totalDuplicateItems = duplicateGroups.reduce((s, g) => s + (g.length - 1), 0)
 
   const cats = ['All', ...Array.from(new Set(products.map(p => p.cat || p.category)))]
   const filtered = products.filter(p => {
@@ -116,6 +152,48 @@ export default function Inventory({ brand, products, setProducts, role, perms, l
       setEditItem(null)
       await reload()
     } catch (e) { showToast('Error updating product') }
+  }
+
+  // Merge one group of duplicates: keep the item with the most complete data (or first one),
+  // combine all stock into it, delete the rest
+  async function mergeGroup(group) {
+    // Pick the "keeper" — prefer the one with a cost_price set, then the one with more stock, then the first
+    const keeper = [...group].sort((a, b) => {
+      const aScore = (a.cost_price > 0 ? 2 : 0) + (a.barcode ? 1 : 0)
+      const bScore = (b.cost_price > 0 ? 2 : 0) + (b.barcode ? 1 : 0)
+      if (aScore !== bScore) return bScore - aScore
+      return (b.stock || 0) - (a.stock || 0)
+    })[0]
+    const others = group.filter(p => p.id !== keeper.id)
+    const combinedStock = group.reduce((s, p) => s + (p.stock || 0), 0)
+    try {
+      await updateProduct(keeper.id, { stock: combinedStock })
+      for (const o of others) {
+        await deleteProduct(o.id)
+      }
+      return true
+    } catch (e) {
+      console.error('Error merging group:', e)
+      return false
+    }
+  }
+
+  // Merge ALL detected duplicate groups in one go
+  async function mergeAllDuplicates() {
+    setCleaningUp(true)
+    let mergedGroups = 0
+    let removedItems = 0
+    for (const group of duplicateGroups) {
+      const ok = await mergeGroup(group)
+      if (ok) {
+        mergedGroups++
+        removedItems += group.length - 1
+      }
+    }
+    await reload()
+    setCleaningUp(false)
+    setShowCleanup(false)
+    showToast('Cleaned up ' + mergedGroups + ' duplicate group(s) — removed ' + removedItems + ' duplicate item(s)')
   }
 
   async function handleDelete(id) {
@@ -236,6 +314,11 @@ export default function Inventory({ brand, products, setProducts, role, perms, l
         <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
           <button onClick={downloadTemplate} style={{ padding: '9px 14px', borderRadius: '10px', border: '1px solid #e5e7eb', background: 'white', color: '#059669', fontWeight: '700', fontSize: '12px', cursor: 'pointer' }}>📥 Template</button>
           <button onClick={() => setShowUpload(true)} style={{ padding: '9px 14px', borderRadius: '10px', border: '1px solid #e5e7eb', background: 'white', color: '#2563eb', fontWeight: '700', fontSize: '12px', cursor: 'pointer' }}>📤 Upload CSV</button>
+          {totalDuplicateItems > 0 && perms?.canEditStock && (
+            <button onClick={() => setShowCleanup(true)} style={{ padding: '9px 14px', borderRadius: '10px', border: '1px solid #fcd34d', background: '#fffbeb', color: '#d97706', fontWeight: '700', fontSize: '12px', cursor: 'pointer' }}>
+              ⚠️ Clean Up {totalDuplicateItems} Duplicate{totalDuplicateItems > 1 ? 's' : ''}
+            </button>
+          )}
           {perms?.canEditStock && <TealBtn onClick={() => setShowAdd(true)}>+ Add Product</TealBtn>}
         </div>
       </div>
@@ -435,6 +518,45 @@ export default function Inventory({ brand, products, setProducts, role, perms, l
                 Import {uploadData.length} Products
               </button>
             )}
+          </div>
+        </div>
+      </Modal>
+
+      {/* Clean Up Duplicates Modal — review existing duplicates and merge them */}
+      <Modal show={showCleanup} onClose={() => setShowCleanup(false)} title='Clean Up Duplicate Products'>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+          <div style={{ padding: '14px', borderRadius: '12px', background: '#fffbeb', border: '1px solid #fcd34d', fontSize: '13px', color: '#92400e', lineHeight: '1.7' }}>
+            Found <strong>{duplicateGroups.length}</strong> group(s) of duplicate products already in your inventory — products matching by brand name or generic name. Merging will combine the stock of each group into one product and remove the rest.
+          </div>
+
+          <div style={{ maxHeight: '320px', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '12px' }}>
+            {duplicateGroups.map((group, gi) => {
+              const totalStock = group.reduce((s, p) => s + (p.stock || 0), 0)
+              return (
+                <div key={gi} style={{ padding: '12px', borderRadius: '10px', border: '1px solid #fde68a', background: '#fffdf5' }}>
+                  <div style={{ fontSize: '11px', fontWeight: '700', color: '#d97706', marginBottom: '8px' }}>
+                    GROUP {gi + 1} — {group.length} duplicates · will combine to {totalStock} units
+                  </div>
+                  {group.map(p => (
+                    <div key={p.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '6px 8px', borderRadius: '6px', background: 'white', marginBottom: '4px', fontSize: '12px' }}>
+                      <div>
+                        <span style={{ fontWeight: '600' }}>{p.emoji || '📦'} {p.name}</span>
+                        {(p.generic_name || p.genericName) && <span style={{ color: '#aaa' }}> · {p.generic_name || p.genericName}</span>}
+                      </div>
+                      <span style={{ color: '#888', fontWeight: '600' }}>{p.stock} units · {fmt(p.price)}</span>
+                    </div>
+                  ))}
+                </div>
+              )
+            })}
+          </div>
+
+          <div style={{ display: 'flex', gap: '10px' }}>
+            <GhostBtn onClick={() => setShowCleanup(false)} style={{ flex: 1, padding: '12px' }}>Cancel</GhostBtn>
+            <button onClick={mergeAllDuplicates} disabled={cleaningUp}
+              style={{ flex: 1, padding: '12px', borderRadius: '12px', border: 'none', background: cleaningUp ? '#e5e7eb' : 'linear-gradient(135deg,#0f766e,#14b8a6)', color: cleaningUp ? '#aaa' : 'white', fontWeight: '800', fontSize: '14px', cursor: cleaningUp ? 'not-allowed' : 'pointer' }}>
+              {cleaningUp ? 'Merging...' : 'Merge All ' + duplicateGroups.length + ' Group(s)'}
+            </button>
           </div>
         </div>
       </Modal>
