@@ -154,13 +154,14 @@ export default function Inventory({ brand, products, setProducts, role, perms, l
     } catch (e) { showToast('Error updating product') }
   }
 
-  // Merge ALL detected duplicate groups in one go — fast version:
-  // updates run in parallel, all deletes happen in a single bulk request at the end
+  // Merge ALL detected duplicate groups in one go — batched version:
+  // updates and deletes run in safe-sized parallel batches to avoid overwhelming
+  // the connection or hitting URL length limits with very large duplicate counts
   async function mergeAllDuplicates() {
     setCleaningUp(true)
     try {
       const idsToDelete = []
-      const updatePromises = []
+      const updates = [] // { id, stock }
 
       for (const group of duplicateGroups) {
         // Pick the "keeper" — prefer the one with a cost_price set, then the one with more stock, then the first
@@ -173,22 +174,33 @@ export default function Inventory({ brand, products, setProducts, role, perms, l
         const others = group.filter(p => p.id !== keeper.id)
         const combinedStock = group.reduce((s, p) => s + (p.stock || 0), 0)
 
-        updatePromises.push(updateProduct(keeper.id, { stock: combinedStock }))
+        updates.push({ id: keeper.id, stock: combinedStock })
         others.forEach(o => idsToDelete.push(o.id))
       }
 
-      // Run all the keeper stock updates in parallel
-      await Promise.all(updatePromises)
-      // Delete every duplicate "loser" product in one single bulk request
-      if (idsToDelete.length > 0) {
-        await deleteProductsBulk(idsToDelete)
+      // Run stock updates in parallel batches of 25 at a time (not all 900+ at once)
+      const UPDATE_BATCH_SIZE = 25
+      for (let i = 0; i < updates.length; i += UPDATE_BATCH_SIZE) {
+        const batch = updates.slice(i, i + UPDATE_BATCH_SIZE)
+        await Promise.all(batch.map(u => updateProduct(u.id, { stock: u.stock })))
+        showToast('Updating products... ' + Math.min(i + UPDATE_BATCH_SIZE, updates.length) + ' / ' + updates.length)
+      }
+
+      // Delete duplicates in batches of 50 IDs per request to keep the URL short and safe
+      const DELETE_BATCH_SIZE = 50
+      let deletedSoFar = 0
+      for (let i = 0; i < idsToDelete.length; i += DELETE_BATCH_SIZE) {
+        const batch = idsToDelete.slice(i, i + DELETE_BATCH_SIZE)
+        await deleteProductsBulk(batch)
+        deletedSoFar += batch.length
+        showToast('Removing duplicates... ' + deletedSoFar + ' / ' + idsToDelete.length)
       }
 
       await reload()
       showToast('Cleaned up ' + duplicateGroups.length + ' duplicate group(s) — removed ' + idsToDelete.length + ' duplicate item(s)')
     } catch (e) {
       console.error('Error during cleanup:', e)
-      showToast('Error during cleanup — please try again')
+      showToast('Error during cleanup — please try again. (' + (e.message || 'unknown error') + ')')
     }
     setCleaningUp(false)
     setShowCleanup(false)
