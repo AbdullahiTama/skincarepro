@@ -103,8 +103,10 @@ export default function Inventory({ brand, products, setProducts, role, perms, l
   async function saveProduct(data, isEdit) {
     try {
       const category = data.cat || data.category || 'Medicines'
+      // Build clean productData — explicitly exclude 'cat' since Supabase only has 'category'
+      const { cat, ...rest } = data
       const productData = {
-        ...data,
+        ...rest,
         category,
         price: parseFloat(data.price) || 0,
         cost_price: parseFloat(data.cost_price) || 0,
@@ -283,9 +285,10 @@ export default function Inventory({ brand, products, setProducts, role, perms, l
     let count = 0
     for (const p of uploadData) {
       try {
-        await addProduct({ ...p, business_id: brand.id })
+        const { cat, ...cleanP } = p
+        await addProduct({ ...cleanP, category: p.category || p.cat || 'Medicines', business_id: brand.id })
         count++
-      } catch (e) {}
+      } catch (e) { console.error('Upload error:', e.message) }
     }
     await reload()
     showToast(count + ' products imported successfully!')
