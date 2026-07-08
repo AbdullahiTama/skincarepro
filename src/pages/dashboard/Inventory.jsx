@@ -93,28 +93,35 @@ export default function Inventory({ brand, products, setProducts, role, perms, l
   async function reload() {
     try {
       const p = await getProducts(brand.id)
-      if (p) setProducts(p)
-    } catch (e) {}
-    if (loadProducts) loadProducts()
+      if (Array.isArray(p)) setProducts(p)
+      if (loadProducts) loadProducts()
+    } catch (e) {
+      console.error('reload error:', e)
+    }
   }
 
   async function saveProduct(data, isEdit) {
     try {
+      const category = data.cat || data.category || 'Medicines'
       const productData = {
         ...data,
-        category: data.cat || data.category || 'Medicines',
+        category,
         price: parseFloat(data.price) || 0,
         cost_price: parseFloat(data.cost_price) || 0,
-        stock: data.category === 'Services' ? 999 : parseInt(data.stock) || 0,
+        stock: category === 'Services' ? 999 : parseInt(data.stock) || 0,
         reorder_level: parseInt(data.reorder_level) || 5,
       }
 
       if (!isEdit) {
-        // Check for existing duplicate by brand name or generic name
-        const dupe = findDuplicate(products, productData.name, productData.generic_name)
-        if (dupe) {
-          setDuplicateWarning({ existing: dupe, incoming: productData })
-          return
+        // Check for duplicate — but only if name is specific enough (more than 3 chars)
+        const name = (productData.name || '').trim()
+        const generic = (productData.generic_name || '').trim()
+        if (name.length > 3) {
+          const dupe = findDuplicate(products, name, generic, null)
+          if (dupe) {
+            setDuplicateWarning({ existing: dupe, incoming: productData })
+            return
+          }
         }
       }
 
@@ -123,12 +130,12 @@ export default function Inventory({ brand, products, setProducts, role, perms, l
         showToast('Product updated!')
       } else {
         await addProduct({ ...productData, business_id: brand.id })
-        showToast('Product added!')
+        showToast('Product added! ✅')
       }
       await reload()
     } catch (e) {
-      console.error(e)
-      showToast('Error saving product — ' + (e.message || 'Please try again'))
+      console.error('saveProduct error:', e)
+      showToast('Error: ' + (e.message || 'Could not save product. Please try again.'))
     }
   }
 
