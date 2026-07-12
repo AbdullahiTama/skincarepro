@@ -34,6 +34,8 @@ export default function Staff({ brand, role, perms }) {
         role: form.role,
         phone: form.phone || '',
         status: 'active',
+        show_on_carefind: form.showOnCareFind || false,
+        public_title: form.publicTitle || form.role,
       })
       // Send welcome email to staff
       try {
@@ -53,6 +55,10 @@ export default function Staff({ brand, role, perms }) {
 
   async function toggleStatus(s) {
     try { await updateStaff(s.id, { status: s.status === 'active' ? 'inactive' : 'active' }); load(); showToast('Status updated!') } catch (e) {}
+  }
+
+  async function toggleCareFind(s) {
+    try { await updateStaff(s.id, { show_on_carefind: !s.show_on_carefind }); load(); showToast(!s.show_on_carefind ? 'Now visible on CareFind' : 'Hidden from CareFind') } catch (e) {}
   }
 
   async function handleDelete(id) {
@@ -90,14 +96,20 @@ export default function Staff({ brand, role, perms }) {
                 <div>
                   <div style={{ fontWeight: '800', fontSize: '15px' }}>{s.full_name}</div>
                   <div style={{ fontSize: '12px', color: '#888', marginTop: '2px' }}>{s.email}{s.phone ? ' · ' + s.phone : ''}</div>
-                  <div style={{ display: 'flex', gap: '6px', marginTop: '6px' }}>
+                  {s.public_title && <div style={{ fontSize: '12px', color: '#0f766e', fontWeight: '600', marginTop: '2px' }}>{s.public_title}</div>}
+                  <div style={{ display: 'flex', gap: '6px', marginTop: '6px', flexWrap: 'wrap' }}>
                     <Pill label={s.role} type={roleColor(s.role)} />
                     <Pill label={s.status === 'active' ? 'Active' : 'Inactive'} type={s.status === 'active' ? 'green' : 'gray'} />
+                    {s.show_on_carefind && <Pill label='On CareFind' type='teal' />}
                   </div>
                 </div>
               </div>
               {isOwner && (
-                <div style={{ display: 'flex', gap: '8px' }}>
+                <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+                  <button onClick={() => toggleCareFind(s)}
+                    style={{ padding: '6px 12px', borderRadius: '8px', border: 'none', background: s.show_on_carefind ? '#fffbeb' : '#f0fdfa', color: s.show_on_carefind ? '#d97706' : '#0f766e', fontWeight: '700', fontSize: '12px', cursor: 'pointer' }}>
+                    {s.show_on_carefind ? 'Hide from CareFind' : 'Show on CareFind'}
+                  </button>
                   <button onClick={() => toggleStatus(s)}
                     style={{ padding: '6px 12px', borderRadius: '8px', border: 'none', background: s.status === 'active' ? '#fffbeb' : '#f0fdf4', color: s.status === 'active' ? '#d97706' : '#059669', fontWeight: '700', fontSize: '12px', cursor: 'pointer' }}>
                     {s.status === 'active' ? 'Deactivate' : 'Activate'}
@@ -118,6 +130,22 @@ export default function Staff({ brand, role, perms }) {
           <Inp label='Phone Number' value={form.phone} onChange={v => f('phone', v)} placeholder='08012345678' />
           <Sel label='Role *' value={form.role} onChange={v => f('role', v)} options={ROLE_LIST} required />
           <Inp label='Password *' value={form.password} onChange={v => f('password', v)} type='password' placeholder='Set a password for them' required />
+
+          <div style={{ padding: '12px', borderRadius: '10px', border: '1px solid #e5e7eb' }}>
+            <label style={{ display: 'flex', gap: '10px', alignItems: 'flex-start', cursor: 'pointer' }}>
+              <input type='checkbox' checked={form.showOnCareFind || false} onChange={e => f('showOnCareFind', e.target.checked)} style={{ marginTop: '2px' }} />
+              <span>
+                <div style={{ fontWeight: '700', fontSize: '13px', color: '#0f172a' }}>Show this person on CareFind</div>
+                <div style={{ fontSize: '12px', color: '#888', marginTop: '2px' }}>They can claim this position on CareFind and post, respond to reviews, and add products on the company's behalf.</div>
+              </span>
+            </label>
+            {form.showOnCareFind && (
+              <div style={{ marginTop: '10px' }}>
+                <Inp label='Public Title' value={form.publicTitle} onChange={v => f('publicTitle', v)} placeholder='e.g. Regional Manager (defaults to their role if left blank)' />
+              </div>
+            )}
+          </div>
+
           <div style={{ padding: '12px', borderRadius: '10px', background: '#f0fdfa', fontSize: '12px', color: '#0f766e', lineHeight: '1.7' }}>
             Staff log in with their email and this password. They will only see pages their role allows.
             <br />⚠️ <strong>Only Owner role</strong> can edit stock prices and delete records.
