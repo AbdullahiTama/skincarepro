@@ -42,10 +42,8 @@ export async function updateBusiness(id, data) { return sbFetch('businesses?id=e
 export async function getBranches(parentId) { return sbFetch('businesses?parent_business_id=eq.' + parentId + '&select=*') }
 export async function addBranch(data) { return sbFetch('businesses', { method: 'POST', body: JSON.stringify(data) }) }
 export async function getAllLocations(mainBusinessId) {
-  // Returns main business + all its branches
   const main = await getBusinessById(mainBusinessId)
   if (!main) return []
-  // If this business itself is a branch, find the real parent
   const parentId = main.parent_business_id || mainBusinessId
   const parent = main.parent_business_id ? await getBusinessById(parentId) : main
   const branches = await getBranches(parentId)
@@ -141,20 +139,20 @@ export async function getAdminTeam() { return sbFetch('admin_team?select=*&order
 export async function addAdminTeam(data) { return sbFetch('admin_team', { method: 'POST', body: JSON.stringify(data) }) }
 export async function removeAdminTeam(id) { return sbFetch('admin_team?id=eq.' + id, { method: 'DELETE', prefer: 'return=minimal' }) }
 
-// ── ENTERPRISE LOCATIONS (Manufacturer/Importer — warehouses, branches, offices) ──
+// ENTERPRISE LOCATIONS
 export async function getEnterpriseLocations(businessId) { return sbFetch('enterprise_locations?business_id=eq.' + businessId + '&order=created_at.asc&select=*') }
 export async function addEnterpriseLocation(data) { return sbFetch('enterprise_locations', { method: 'POST', body: JSON.stringify(data) }) }
 export async function updateEnterpriseLocation(id, data) { return sbFetch('enterprise_locations?id=eq.' + id, { method: 'PATCH', body: JSON.stringify(data), prefer: 'return=minimal' }) }
 export async function deleteEnterpriseLocation(id) { return sbFetch('enterprise_locations?id=eq.' + id, { method: 'DELETE', prefer: 'return=minimal' }) }
 
-// ── STAFF CLAIMS (CareFind rep verification requests — owner approves here) ──
+// STAFF CLAIMS
 export async function getStaffClaims(businessId) {
   return sbFetch('staff_claims?select=id,status,created_at,staff_id,staff:staff_id(id,full_name,public_title,business_id)&staff.business_id=eq.' + businessId + '&status=eq.pending')
 }
 export async function approveStaffClaim(id) { return sbFetch('staff_claims?id=eq.' + id, { method: 'PATCH', body: JSON.stringify({ status: 'approved' }), prefer: 'return=minimal' }) }
 export async function rejectStaffClaim(id) { return sbFetch('staff_claims?id=eq.' + id, { method: 'PATCH', body: JSON.stringify({ status: 'rejected' }), prefer: 'return=minimal' }) }
 
-// ── TERRITORIES (Manufacturer/Importer — regions, states, coverage areas) ──
+// TERRITORIES
 export async function getTerritories(businessId) { return sbFetch('territories?business_id=eq.' + businessId + '&order=created_at.asc&select=*') }
 export async function addTerritory(data) { return sbFetch('territories', { method: 'POST', body: JSON.stringify(data) }) }
 export async function updateTerritory(id, data) { return sbFetch('territories?id=eq.' + id, { method: 'PATCH', body: JSON.stringify(data), prefer: 'return=minimal' }) }
@@ -165,6 +163,31 @@ export async function getRepAssignments(territoryIds) {
 }
 export async function assignRepToTerritory(staffId, territoryId) { return sbFetch('rep_territories', { method: 'POST', body: JSON.stringify({ staff_id: staffId, territory_id: territoryId }) }) }
 export async function removeRepFromTerritory(id) { return sbFetch('rep_territories?id=eq.' + id, { method: 'DELETE', prefer: 'return=minimal' }) }
+
+// INTERNAL MESSAGES (official correspondence — To, CC, threaded replies)
+export async function getMessageThreads(businessId) {
+  return sbFetch('internal_messages?business_id=eq.' + businessId + '&parent_id=is.null&order=created_at.desc&select=*')
+}
+export async function getThreadMessages(rootId) {
+  return sbFetch('internal_messages?or=(id.eq.' + rootId + ',parent_id.eq.' + rootId + ')&order=created_at.asc&select=*')
+}
+export async function getMessageRecipients(messageIds) {
+  if (!messageIds || messageIds.length === 0) return []
+  return sbFetch('internal_message_recipients?message_id=in.(' + messageIds.join(',') + ')&select=*')
+}
+export async function sendMessage(message, recipients) {
+  const rows = await sbFetch('internal_messages', { method: 'POST', body: JSON.stringify(message) })
+  const saved = Array.isArray(rows) ? rows[0] : rows
+  if (!saved || !saved.id) throw new Error('Message was not saved — no id returned.')
+  if (recipients && recipients.length > 0) {
+    const payload = recipients.map(function (r) { return { ...r, message_id: saved.id } })
+    await sbFetch('internal_message_recipients', { method: 'POST', body: JSON.stringify(payload), prefer: 'return=minimal' })
+  }
+  return saved
+}
+export async function markMessageRead(recipientRowId) {
+  return sbFetch('internal_message_recipients?id=eq.' + recipientRowId, { method: 'PATCH', body: JSON.stringify({ read_at: new Date().toISOString() }), prefer: 'return=minimal' })
+}
 
 // OFFLINE SUPPORT
 const CACHE = 'carehub_v1'
