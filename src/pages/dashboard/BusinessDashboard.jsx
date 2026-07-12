@@ -104,9 +104,6 @@ export default function BusinessDashboard() {
             No internet — Offline mode. Sales will sync when connected.
           </div>
         )}
-        {online && getCached && (
-          <div style={{ display: 'none' }} />
-        )}
         <div style={{ flex: 1, overflowY: 'auto', background: '#f9fafb' }}>
           <Routes>
             <Route path='dashboard' element={<><TopBar title='Dashboard' brand={brand} role={role} /><div style={{ padding: '24px' }}><DashboardHome {...pageProps} /></div></>} />
