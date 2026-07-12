@@ -1,11 +1,12 @@
 import { useState, useEffect } from 'react'
-import { getStaff, addStaff, updateStaff, deleteStaff } from '../../lib/supabase'
+import { getStaff, addStaff, updateStaff, deleteStaff, getStaffClaims, approveStaffClaim, rejectStaffClaim } from '../../lib/supabase'
 import { emailStaffWelcome } from '../../lib/email'
 import { ROLE_LIST } from '../../lib/permissions'
 import { Card, StatCard, SectionHead, Modal, Pill, Inp, Sel, GhostBtn, TealBtn, RedBtn, Avatar, Loading, Empty, useToast, Toast } from '../../components/ui'
 
 export default function Staff({ brand, role, perms }) {
   const [staff, setStaff] = useState([])
+  const [claims, setClaims] = useState([])
   const [loading, setLoading] = useState(true)
   const [showAdd, setShowAdd] = useState(false)
   const [form, setForm] = useState({})
@@ -20,7 +21,14 @@ export default function Staff({ brand, role, perms }) {
 
   async function load() {
     setLoading(true)
-    try { const s = await getStaff(brand.id); setStaff(s || []) } catch (e) {}
+    try {
+      const s = await getStaff(brand.id)
+      setStaff(s || [])
+    } catch (e) {}
+    try {
+      const c = await getStaffClaims(brand.id)
+      setClaims(c || [])
+    } catch (e) {}
     setLoading(false)
   }
 
@@ -72,6 +80,15 @@ export default function Staff({ brand, role, perms }) {
     try { await deleteStaff(id); load(); showToast('Staff removed.') } catch (e) {}
   }
 
+  async function handleApproveClaim(claimId) {
+    try { await approveStaffClaim(claimId); load(); showToast('Claim approved!') } catch (e) { alert('Error approving claim.') }
+  }
+
+  async function handleRejectClaim(claimId) {
+    if (!window.confirm('Reject this claim?')) return
+    try { await rejectStaffClaim(claimId); load(); showToast('Claim rejected.') } catch (e) { alert('Error rejecting claim.') }
+  }
+
   const roleColor = r => ({ Owner: 'purple', Manager: 'blue', Doctor: 'teal', Pharmacist: 'teal', Nurse: 'teal' }[r] || 'gray')
 
   return (
@@ -82,6 +99,38 @@ export default function Staff({ brand, role, perms }) {
       {!isOwner && (
         <div style={{ padding: '12px 16px', borderRadius: '12px', background: '#fffbeb', border: '1px solid #fcd34d', marginBottom: '20px', fontSize: '13px', color: '#92400e' }}>
           ⚠️ Only the business Owner can add or remove staff members.
+        </div>
+      )}
+
+      {isOwner && claims.length > 0 && (
+        <div style={{ marginBottom: '20px' }}>
+          <div style={{ fontSize: '13px', fontWeight: '800', color: '#0f172a', marginBottom: '10px' }}>
+            🔔 Pending CareFind Claims ({claims.length})
+          </div>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+            {claims.map(c => (
+              <Card key={c.id} style={{ padding: '14px', border: '1px solid #fcd34d', background: '#fffbeb' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '10px' }}>
+                  <div>
+                    <div style={{ fontWeight: '800', fontSize: '14px', color: '#0f172a' }}>{c.staff?.full_name}</div>
+                    <div style={{ fontSize: '12px', color: '#92400e', marginTop: '2px' }}>
+                      wants to claim <strong>{c.staff?.public_title || 'their position'}</strong> on CareFind
+                    </div>
+                  </div>
+                  <div style={{ display: 'flex', gap: '8px' }}>
+                    <button onClick={() => handleApproveClaim(c.id)}
+                      style={{ padding: '7px 14px', borderRadius: '8px', border: 'none', background: '#0f766e', color: 'white', fontWeight: '700', fontSize: '12px', cursor: 'pointer' }}>
+                      ✓ Approve
+                    </button>
+                    <button onClick={() => handleRejectClaim(c.id)}
+                      style={{ padding: '7px 14px', borderRadius: '8px', border: 'none', background: '#fef2f2', color: '#dc2626', fontWeight: '700', fontSize: '12px', cursor: 'pointer' }}>
+                      ✕ Reject
+                    </button>
+                  </div>
+                </div>
+              </Card>
+            ))}
+          </div>
         </div>
       )}
 
