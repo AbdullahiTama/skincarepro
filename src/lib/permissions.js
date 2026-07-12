@@ -1,6 +1,6 @@
 export const ROLES = {
   Owner: {
-    nav: ['dashboard','pos','inventory','clients','appointments','consultation','expenses','debts','purchases','staff','reports','settings','carefind','locations','reception','triage','doctor','rx_inbox','lab','imaging'],
+    nav: ['dashboard','pos','inventory','clients','appointments','consultation','expenses','debts','purchases','staff','reports','settings','carefind','locations','warehouses','reception','triage','doctor','rx_inbox','lab','imaging'],
     canEditPrice: true,
     canEditStock: true,
     canDelete: true,
@@ -118,8 +118,25 @@ export const ROLES = {
   },
 }
 
+// Fallback for any role name not in ROLES above — used for custom-typed titles
+// (Manufacturer/Importer and Wholesale let companies type their own role names,
+// so "Regional Manager", "Business Development Manager" etc won't be in the list above).
+export const DEFAULT_STAFF_PERMS = {
+  nav: ['dashboard', 'warehouses', 'reports', 'carefind'],
+  canEditPrice: false,
+  canEditStock: false,
+  canDelete: false,
+  canViewReports: true,
+  canExportReports: false,
+  canManageStaff: false,
+  canViewFinance: false,
+  canMakeSales: false,
+  canViewSettings: false,
+  label: 'Staff',
+}
+
 export function getPerms(role) {
-  return ROLES[role] || ROLES['Cashier']
+  return ROLES[role] || DEFAULT_STAFF_PERMS
 }
 
 export function can(role, action) {
@@ -164,11 +181,10 @@ export const ALL_NAV_HOSPITAL = [
   ['settings', '⚙️', 'Settings'],
 ]
 
-// Manufacturer / Importer — reuses existing working pages, relabelled.
-// Warehouses/Sales Team screens will replace Locations/Staff once that module is built.
+// Manufacturer / Importer / Wholesale — dedicated warehouse & hierarchy system
 export const ALL_NAV_ENTERPRISE = [
   ['dashboard', '🏠', 'Dashboard'],
-  ['locations', '🏭', 'Warehouses & Branches'],
+  ['warehouses', '🏭', 'Warehouses & Branches'],
   ['staff', '👥', 'Sales Team'],
   ['reports', '📊', 'Reports'],
   ['carefind', '🔍', 'CareFind Profile'],
