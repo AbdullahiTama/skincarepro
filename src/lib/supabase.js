@@ -65,7 +65,6 @@ export async function updateProduct(id, data) { return sbFetch('products?id=eq.'
 export async function deleteProduct(id) { return sbFetch('products?id=eq.' + id, { method: 'DELETE', prefer: 'return=minimal' }) }
 export async function deleteProductsBulk(ids) {
   if (!ids || ids.length === 0) return
-  // Supabase REST supports filtering on id with the "in" operator — one request for many rows
   return sbFetch('products?id=in.(' + ids.join(',') + ')', { method: 'DELETE', prefer: 'return=minimal' })
 }
 
@@ -141,6 +140,19 @@ export async function saveSettings(businessId, data) {
 export async function getAdminTeam() { return sbFetch('admin_team?select=*&order=created_at.desc') }
 export async function addAdminTeam(data) { return sbFetch('admin_team', { method: 'POST', body: JSON.stringify(data) }) }
 export async function removeAdminTeam(id) { return sbFetch('admin_team?id=eq.' + id, { method: 'DELETE', prefer: 'return=minimal' }) }
+
+// ── ENTERPRISE LOCATIONS (Manufacturer/Importer — warehouses, branches, offices) ──
+export async function getEnterpriseLocations(businessId) { return sbFetch('enterprise_locations?business_id=eq.' + businessId + '&order=created_at.asc&select=*') }
+export async function addEnterpriseLocation(data) { return sbFetch('enterprise_locations', { method: 'POST', body: JSON.stringify(data) }) }
+export async function updateEnterpriseLocation(id, data) { return sbFetch('enterprise_locations?id=eq.' + id, { method: 'PATCH', body: JSON.stringify(data), prefer: 'return=minimal' }) }
+export async function deleteEnterpriseLocation(id) { return sbFetch('enterprise_locations?id=eq.' + id, { method: 'DELETE', prefer: 'return=minimal' }) }
+
+// ── STAFF CLAIMS (CareFind rep verification requests — owner approves here) ──
+export async function getStaffClaims(businessId) {
+  return sbFetch('staff_claims?select=id,status,created_at,staff_id,staff:staff_id(id,full_name,public_title,business_id)&staff.business_id=eq.' + businessId + '&status=eq.pending')
+}
+export async function approveStaffClaim(id) { return sbFetch('staff_claims?id=eq.' + id, { method: 'PATCH', body: JSON.stringify({ status: 'approved' }), prefer: 'return=minimal' }) }
+export async function rejectStaffClaim(id) { return sbFetch('staff_claims?id=eq.' + id, { method: 'PATCH', body: JSON.stringify({ status: 'rejected' }), prefer: 'return=minimal' }) }
 
 // OFFLINE SUPPORT
 const CACHE = 'carehub_v1'
