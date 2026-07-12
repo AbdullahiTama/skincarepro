@@ -164,9 +164,22 @@ export const ALL_NAV_HOSPITAL = [
   ['settings', '⚙️', 'Settings'],
 ]
 
-export function getNavItems(role, isHospital) {
+// Manufacturer / Importer — reuses existing working pages, relabelled.
+// Warehouses/Sales Team screens will replace Locations/Staff once that module is built.
+export const ALL_NAV_ENTERPRISE = [
+  ['dashboard', '🏠', 'Dashboard'],
+  ['locations', '🏭', 'Warehouses & Branches'],
+  ['staff', '👥', 'Sales Team'],
+  ['reports', '📊', 'Reports'],
+  ['carefind', '🔍', 'CareFind Profile'],
+  ['settings', '⚙️', 'Settings'],
+]
+
+export function getNavItems(role, businessType) {
   const perms = getPerms(role)
-  const all = isHospital ? ALL_NAV_HOSPITAL : ALL_NAV_DEFAULT
+  let all = ALL_NAV_DEFAULT
+  if (businessType === 'hospital') all = ALL_NAV_HOSPITAL
+  if (businessType === 'manufacturer_importer' || businessType === 'wholesale') all = ALL_NAV_ENTERPRISE
   return all.filter(item => perms.nav.includes(item[0]))
 }
 
