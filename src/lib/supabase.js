@@ -164,7 +164,7 @@ export async function getRepAssignments(territoryIds) {
 export async function assignRepToTerritory(staffId, territoryId) { return sbFetch('rep_territories', { method: 'POST', body: JSON.stringify({ staff_id: staffId, territory_id: territoryId }) }) }
 export async function removeRepFromTerritory(id) { return sbFetch('rep_territories?id=eq.' + id, { method: 'DELETE', prefer: 'return=minimal' }) }
 
-// INTERNAL MESSAGES (official correspondence — To, CC, threaded replies)
+// INTERNAL MESSAGES (official correspondence — To, CC, threaded replies, attachments)
 export async function getMessageThreads(businessId) {
   return sbFetch('internal_messages?business_id=eq.' + businessId + '&parent_id=is.null&order=created_at.desc&select=*')
 }
@@ -175,7 +175,35 @@ export async function getMessageRecipients(messageIds) {
   if (!messageIds || messageIds.length === 0) return []
   return sbFetch('internal_message_recipients?message_id=in.(' + messageIds.join(',') + ')&select=*')
 }
-export async function sendMessage(message, recipients) {
+export async function getMessageFiles(messageIds) {
+  if (!messageIds || messageIds.length === 0) return []
+  return sbFetch('internal_message_files?message_id=in.(' + messageIds.join(',') + ')&select=*')
+}
+
+// Uploads one file to the message-files bucket and returns its public URL.
+// Throws with the real reason so nothing fails silently.
+export async function uploadMessageFile(file) {
+  const safeName = file.name.replace(/[^a-zA-Z0-9._-]/g, '_')
+  const path = Date.now() + '-' + Math.floor(Math.random() * 100000) + '-' + safeName
+  const res = await fetch(SB_URL + '/storage/v1/object/message-files/' + encodeURIComponent(path), {
+    method: 'POST',
+    headers: {
+      'apikey': SB_KEY,
+      'Authorization': 'Bearer ' + SB_KEY,
+      'Content-Type': file.type || 'application/octet-stream',
+    },
+    body: file,
+  })
+  if (!res.ok) {
+    const text = await res.text()
+    let detail = text
+    try { detail = JSON.parse(text).message || text } catch (e) {}
+    throw new Error('Upload failed (' + res.status + '): ' + detail)
+  }
+  return SB_URL + '/storage/v1/object/public/message-files/' + encodeURIComponent(path)
+}
+
+export async function sendMessage(message, recipients, files) {
   const rows = await sbFetch('internal_messages', { method: 'POST', body: JSON.stringify(message) })
   const saved = Array.isArray(rows) ? rows[0] : rows
   if (!saved || !saved.id) throw new Error('Message was not saved — no id returned.')
@@ -183,8 +211,13 @@ export async function sendMessage(message, recipients) {
     const payload = recipients.map(function (r) { return { ...r, message_id: saved.id } })
     await sbFetch('internal_message_recipients', { method: 'POST', body: JSON.stringify(payload), prefer: 'return=minimal' })
   }
+  if (files && files.length > 0) {
+    const filePayload = files.map(function (f) { return { ...f, message_id: saved.id } })
+    await sbFetch('internal_message_files', { method: 'POST', body: JSON.stringify(filePayload), prefer: 'return=minimal' })
+  }
   return saved
 }
+
 export async function markMessageRead(recipientRowId) {
   return sbFetch('internal_message_recipients?id=eq.' + recipientRowId, { method: 'PATCH', body: JSON.stringify({ read_at: new Date().toISOString() }), prefer: 'return=minimal' })
 }
