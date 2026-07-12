@@ -154,6 +154,18 @@ export async function getStaffClaims(businessId) {
 export async function approveStaffClaim(id) { return sbFetch('staff_claims?id=eq.' + id, { method: 'PATCH', body: JSON.stringify({ status: 'approved' }), prefer: 'return=minimal' }) }
 export async function rejectStaffClaim(id) { return sbFetch('staff_claims?id=eq.' + id, { method: 'PATCH', body: JSON.stringify({ status: 'rejected' }), prefer: 'return=minimal' }) }
 
+// ── TERRITORIES (Manufacturer/Importer — regions, states, coverage areas) ──
+export async function getTerritories(businessId) { return sbFetch('territories?business_id=eq.' + businessId + '&order=created_at.asc&select=*') }
+export async function addTerritory(data) { return sbFetch('territories', { method: 'POST', body: JSON.stringify(data) }) }
+export async function updateTerritory(id, data) { return sbFetch('territories?id=eq.' + id, { method: 'PATCH', body: JSON.stringify(data), prefer: 'return=minimal' }) }
+export async function deleteTerritory(id) { return sbFetch('territories?id=eq.' + id, { method: 'DELETE', prefer: 'return=minimal' }) }
+export async function getRepAssignments(territoryIds) {
+  if (!territoryIds || territoryIds.length === 0) return []
+  return sbFetch('rep_territories?territory_id=in.(' + territoryIds.join(',') + ')&select=id,staff_id,territory_id,staff:staff_id(id,full_name,public_title)')
+}
+export async function assignRepToTerritory(staffId, territoryId) { return sbFetch('rep_territories', { method: 'POST', body: JSON.stringify({ staff_id: staffId, territory_id: territoryId }) }) }
+export async function removeRepFromTerritory(id) { return sbFetch('rep_territories?id=eq.' + id, { method: 'DELETE', prefer: 'return=minimal' }) }
+
 // OFFLINE SUPPORT
 const CACHE = 'carehub_v1'
 export function cacheData(key, data) {
