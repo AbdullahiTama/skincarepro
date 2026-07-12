@@ -8,8 +8,7 @@ export default function Sidebar({ brand, role }) {
   const location = useLocation()
   const { logout } = useAuth()
   const bType = brand?.business_type || brand?.type || 'skincare'
-  const isHospital = bType === 'hospital'
-  const navItems = getNavItems(role, isHospital)
+  const navItems = getNavItems(role, bType)
   const current = location.pathname.split('/').pop() || 'dashboard'
 
   return (
