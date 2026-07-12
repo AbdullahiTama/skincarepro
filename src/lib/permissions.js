@@ -1,6 +1,6 @@
 export const ROLES = {
   Owner: {
-    nav: ['dashboard','pos','inventory','clients','appointments','consultation','expenses','debts','purchases','staff','reports','settings','carefind','locations','warehouses','territories','reception','triage','doctor','rx_inbox','lab','imaging'],
+    nav: ['dashboard','pos','inventory','clients','appointments','consultation','expenses','debts','purchases','staff','reports','settings','carefind','locations','warehouses','territories','messages','reception','triage','doctor','rx_inbox','lab','imaging'],
     canEditPrice: true,
     canEditStock: true,
     canDelete: true,
@@ -13,7 +13,7 @@ export const ROLES = {
     label: 'Owner — Full Access',
   },
   Manager: {
-    nav: ['dashboard','pos','inventory','clients','appointments','consultation','expenses','debts','purchases','reports','carefind'],
+    nav: ['dashboard','pos','inventory','clients','appointments','consultation','expenses','debts','purchases','reports','carefind','messages'],
     canEditPrice: false,
     canEditStock: false,
     canDelete: false,
@@ -122,7 +122,7 @@ export const ROLES = {
 // (Manufacturer/Importer and Wholesale let companies type their own role names,
 // so "Regional Manager", "Business Development Manager" etc won't be in the list above).
 export const DEFAULT_STAFF_PERMS = {
-  nav: ['dashboard', 'warehouses', 'territories', 'reports', 'carefind'],
+  nav: ['dashboard', 'warehouses', 'territories', 'messages', 'reports', 'carefind'],
   canEditPrice: false,
   canEditStock: false,
   canDelete: false,
@@ -162,7 +162,7 @@ export const ALL_NAV_DEFAULT = [
 
 export const ALL_NAV_HOSPITAL = [
   ['dashboard', '🏠', 'Dashboard'],
-  ['reception', '👩‍💼', 'Reception'],
+  ['reception', '👩‍', 'Reception'],
   ['triage', '🏥', 'Triage'],
   ['doctor', '👨‍⚕️', 'Doctor'],
   ['rx_inbox', '💊', 'Rx Inbox'],
@@ -187,6 +187,7 @@ export const ALL_NAV_ENTERPRISE = [
   ['warehouses', '🏭', 'Warehouses & Branches'],
   ['staff', '👥', 'Sales Team'],
   ['territories', '🗺️', 'Territories'],
+  ['messages', '✉️', 'Correspondence'],
   ['reports', '📊', 'Reports'],
   ['carefind', '🔍', 'CareFind Profile'],
   ['settings', '⚙️', 'Settings'],
