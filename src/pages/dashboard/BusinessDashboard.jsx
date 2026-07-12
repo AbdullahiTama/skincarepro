@@ -24,6 +24,7 @@ import CareFind from './CareFind'
 import Locations from './Locations'
 import Warehouses from './Warehouses'
 import Territories from './Territories'
+import Messages from './Messages'
 import Reception from './hospital/Reception'
 import Triage from './hospital/Triage'
 import Doctor from './hospital/Doctor'
@@ -122,6 +123,7 @@ export default function BusinessDashboard() {
             <Route path='locations' element={<><TopBar title='Locations' brand={brand} role={role} /><div style={{ padding: '24px' }}><Locations {...pageProps} /></div></>} />
             <Route path='warehouses' element={<Warehouses {...pageProps} />} />
             <Route path='territories' element={<Territories {...pageProps} />} />
+            <Route path='messages' element={<Messages {...pageProps} />} />
             <Route path='reception' element={<><TopBar title='Reception' brand={brand} role={role} /><div style={{ padding: '24px' }}><Reception {...pageProps} /></div></>} />
             <Route path='triage' element={<><TopBar title='Triage' brand={brand} role={role} /><div style={{ padding: '24px' }}><Triage {...pageProps} /></div></>} />
             <Route path='doctor' element={<><TopBar title='Doctor Consultation' brand={brand} role={role} /><div style={{ padding: '24px' }}><Doctor {...pageProps} /></div></>} />
