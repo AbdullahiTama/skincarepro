@@ -10,12 +10,14 @@ export const currentMonth = () => new Date().toISOString().slice(0, 7)
 export const genId = (prefix = 'TXN') => prefix + Math.floor(Math.random() * 900000 + 100000)
 
 export const BUSINESS_TYPES = [
-  { id: 'skincare',  icon: '🧴', name: 'Skincare / Aesthetic Spa' },
-  { id: 'pharmacy',  icon: '💊', name: 'Community Pharmacy' },
-  { id: 'hospital',  icon: '🏥', name: 'Hospital / Clinic' },
-  { id: 'dental',    icon: '🦷', name: 'Dental Clinic' },
-  { id: 'optical',   icon: '👁', name: 'Optical / Eye Clinic' },
-  { id: 'wellness',  icon: '🌿', name: 'Wellness & Nutrition Center' },
+  { id: 'skincare',            icon: '🧴', name: 'Skincare / Aesthetic Spa' },
+  { id: 'pharmacy',            icon: '💊', name: 'Community Pharmacy' },
+  { id: 'hospital',            icon: '🏥', name: 'Hospital / Clinic' },
+  { id: 'dental',              icon: '🦷', name: 'Dental Clinic' },
+  { id: 'optical',             icon: '👁', name: 'Optical / Eye Clinic' },
+  { id: 'wellness',            icon: '🌿', name: 'Wellness & Nutrition Center' },
+  { id: 'manufacturer_importer', icon: '🏭', name: 'Manufacturer / Importer' },
+  { id: 'wholesale',           icon: '📦', name: 'Wholesale / Distributor' },
 ]
 
 export const businessIcon = (type) => BUSINESS_TYPES.find(b => b.id === type)?.icon || '🏥'
