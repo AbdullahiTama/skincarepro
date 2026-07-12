@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { getMessageThreads, getThreadMessages, getMessageRecipients, sendMessage, markMessageRead, getStaff } from '../../lib/supabase'
+import { getMessageThreads, getThreadMessages, getMessageRecipients, getMessageFiles, uploadMessageFile, sendMessage, markMessageRead, getStaff } from '../../lib/supabase'
 import { Card, Inp, TealBtn, GhostBtn } from '../../components/ui'
 
 function fmtStamp(d) {
@@ -10,6 +10,13 @@ function fmtStamp(d) {
 
 function refFor(id) {
   return 'REF-' + String(id).replace(/-/g, '').slice(0, 8).toUpperCase()
+}
+
+function fmtSize(bytes) {
+  if (!bytes) return ''
+  if (bytes < 1024) return bytes + ' B'
+  if (bytes < 1024 * 1024) return Math.round(bytes / 1024) + ' KB'
+  return (bytes / (1024 * 1024)).toFixed(1) + ' MB'
 }
 
 function readAuth() {
@@ -28,14 +35,17 @@ export default function Messages({ brand, showToast }) {
 
   const [threads, setThreads] = useState([])
   const [recipientsByMsg, setRecipientsByMsg] = useState({})
+  const [filesByMsg, setFilesByMsg] = useState({})
   const [staffList, setStaffList] = useState([])
   const [loading, setLoading] = useState(true)
 
   const [openThread, setOpenThread] = useState(null)
   const [threadMsgs, setThreadMsgs] = useState([])
   const [threadRecips, setThreadRecips] = useState({})
+  const [threadFiles, setThreadFiles] = useState({})
   const [loadingThread, setLoadingThread] = useState(false)
   const [replyBody, setReplyBody] = useState('')
+  const [replyFiles, setReplyFiles] = useState([])
   const [sendingReply, setSendingReply] = useState(false)
 
   const [composing, setComposing] = useState(false)
@@ -43,7 +53,9 @@ export default function Messages({ brand, showToast }) {
   const [body, setBody] = useState('')
   const [toIds, setToIds] = useState([])
   const [ccIds, setCcIds] = useState([])
+  const [attachments, setAttachments] = useState([])
   const [sending, setSending] = useState(false)
+  const [uploadStatus, setUploadStatus] = useState('')
 
   useEffect(() => { load() }, [brand?.id])
 
@@ -57,12 +69,19 @@ export default function Messages({ brand, showToast }) {
       setStaffList(stf || [])
       const ids = (ths || []).map(function (t) { return t.id })
       const recips = await getMessageRecipients(ids)
-      const map = {}
+      const rmap = {}
       ;(recips || []).forEach(function (r) {
-        if (!map[r.message_id]) map[r.message_id] = []
-        map[r.message_id].push(r)
+        if (!rmap[r.message_id]) rmap[r.message_id] = []
+        rmap[r.message_id].push(r)
       })
-      setRecipientsByMsg(map)
+      setRecipientsByMsg(rmap)
+      const fls = await getMessageFiles(ids)
+      const fmap = {}
+      ;(fls || []).forEach(function (f) {
+        if (!fmap[f.message_id]) fmap[f.message_id] = []
+        fmap[f.message_id].push(f)
+      })
+      setFilesByMsg(fmap)
     } catch (e) {
       alert('Could not load correspondence: ' + e.message)
     }
@@ -102,12 +121,55 @@ export default function Messages({ brand, showToast }) {
     setToIds(function (prev) { return prev.filter(function (x) { return x !== id }) })
   }
 
+  function pickAttachments(e) {
+    const picked = Array.from(e.target.files || [])
+    if (picked.length === 0) return
+    const tooBig = picked.filter(function (f) { return f.size > 20 * 1024 * 1024 })
+    if (tooBig.length > 0) {
+      alert('These files are over 20MB and cannot be attached: ' + tooBig.map(function (f) { return f.name }).join(', '))
+    }
+    const ok = picked.filter(function (f) { return f.size <= 20 * 1024 * 1024 })
+    setAttachments(function (prev) { return prev.concat(ok) })
+    e.target.value = ''
+  }
+
+  function removeAttachment(i) {
+    setAttachments(function (prev) { return prev.filter(function (f, idx) { return idx !== i }) })
+  }
+
+  function pickReplyFiles(e) {
+    const picked = Array.from(e.target.files || [])
+    if (picked.length === 0) return
+    const ok = picked.filter(function (f) { return f.size <= 20 * 1024 * 1024 })
+    if (ok.length !== picked.length) alert('Some files were over 20MB and were skipped.')
+    setReplyFiles(function (prev) { return prev.concat(ok) })
+    e.target.value = ''
+  }
+
+  function removeReplyFile(i) {
+    setReplyFiles(function (prev) { return prev.filter(function (f, idx) { return idx !== i }) })
+  }
+
+  async function uploadAll(list) {
+    const out = []
+    for (let i = 0; i < list.length; i++) {
+      const f = list[i]
+      setUploadStatus('Uploading ' + (i + 1) + ' of ' + list.length + ' — ' + f.name)
+      const url = await uploadMessageFile(f)
+      out.push({ file_name: f.name, file_url: url, file_type: f.type || null, file_size: f.size || null })
+    }
+    setUploadStatus('')
+    return out
+  }
+
   async function send() {
     if (!subject.trim()) { alert('Please enter a subject.'); return }
     if (!body.trim()) { alert('Please write your message.'); return }
     if (toIds.length === 0) { alert('Please select at least one recipient in the "To" field.'); return }
     setSending(true)
     try {
+      const uploaded = await uploadAll(attachments)
+
       const recipients = toIds.map(function (id) {
         return { staff_id: staffIdFor(id), recipient_name: nameFor(id), kind: 'to' }
       }).concat(ccIds.map(function (id) {
@@ -122,18 +184,20 @@ export default function Messages({ brand, showToast }) {
         sender_title: meTitle,
         subject: subject.trim(),
         body: body.trim(),
-      }, recipients)
+      }, recipients, uploaded)
 
       if (showToast) showToast('Message sent')
       setSubject('')
       setBody('')
       setToIds([])
       setCcIds([])
+      setAttachments([])
       setComposing(false)
       load()
     } catch (e) {
       alert('Could not send: ' + e.message)
     }
+    setUploadStatus('')
     setSending(false)
   }
 
@@ -141,17 +205,26 @@ export default function Messages({ brand, showToast }) {
     setOpenThread(t)
     setLoadingThread(true)
     setReplyBody('')
+    setReplyFiles([])
     try {
       const msgs = await getThreadMessages(t.id)
       setThreadMsgs(msgs || [])
       const ids = (msgs || []).map(function (m) { return m.id })
       const recips = await getMessageRecipients(ids)
-      const map = {}
+      const rmap = {}
       ;(recips || []).forEach(function (r) {
-        if (!map[r.message_id]) map[r.message_id] = []
-        map[r.message_id].push(r)
+        if (!rmap[r.message_id]) rmap[r.message_id] = []
+        rmap[r.message_id].push(r)
       })
-      setThreadRecips(map)
+      setThreadRecips(rmap)
+
+      const fls = await getMessageFiles(ids)
+      const fmap = {}
+      ;(fls || []).forEach(function (f) {
+        if (!fmap[f.message_id]) fmap[f.message_id] = []
+        fmap[f.message_id].push(f)
+      })
+      setThreadFiles(fmap)
 
       const mine = (recips || []).filter(function (r) {
         return r.staff_id === meStaffId && !r.read_at
@@ -170,6 +243,8 @@ export default function Messages({ brand, showToast }) {
     if (threadMsgs.length === 0) { alert('Thread not loaded.'); return }
     setSendingReply(true)
     try {
+      const uploaded = await uploadAll(replyFiles)
+
       const root = threadMsgs[0]
       const seen = {}
       const recipients = []
@@ -202,15 +277,17 @@ export default function Messages({ brand, showToast }) {
         sender_title: meTitle,
         subject: null,
         body: replyBody.trim(),
-      }, recipients)
+      }, recipients, uploaded)
 
       if (showToast) showToast('Reply sent')
       setReplyBody('')
+      setReplyFiles([])
       openThreadView(openThread)
       load()
     } catch (e) {
       alert('Could not send reply: ' + e.message)
     }
+    setUploadStatus('')
     setSendingReply(false)
   }
 
@@ -239,12 +316,16 @@ export default function Messages({ brand, showToast }) {
       .map(function (r) { return r.recipient_name }).join(', ')
   }
 
+  function attachCount(msgId) {
+    return (filesByMsg[msgId] || []).length
+  }
+
   return (
     <div style={{ padding: '24px', maxWidth: '820px' }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '6px' }}>
         <div>
           <div style={{ fontSize: '18px', fontWeight: '900', color: '#0f172a' }}>Internal Correspondence</div>
-          <div style={{ fontSize: '13px', color: '#888', marginTop: '2px' }}>Official record of communication. Every message is logged with sender, recipients, and time.</div>
+          <div style={{ fontSize: '13px', color: '#888', marginTop: '2px' }}>Official record of communication. Every message is logged with sender, recipients, attachments, and time.</div>
         </div>
         <TealBtn onClick={function () { setComposing(true) }}>+ New Message</TealBtn>
       </div>
@@ -267,6 +348,7 @@ export default function Messages({ brand, showToast }) {
       <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
         {threads.map(function (t) {
           const unread = unreadCount(t.id)
+          const nFiles = attachCount(t.id)
           return (
             <Card key={t.id} style={{ padding: '0', overflow: 'hidden', borderLeft: unread > 0 ? '3px solid #0f766e' : '3px solid transparent' }}>
               <button onClick={function () { openThreadView(t) }}
@@ -276,6 +358,7 @@ export default function Messages({ brand, showToast }) {
                     <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
                       <span style={{ fontSize: '14.5px', fontWeight: unread > 0 ? '900' : '700', color: '#0f172a' }}>{t.subject || '(no subject)'}</span>
                       {unread > 0 && <span style={{ fontSize: '9.5px', fontWeight: '800', padding: '2px 7px', borderRadius: '20px', background: '#0f766e', color: 'white' }}>NEW</span>}
+                      {nFiles > 0 && <span style={{ fontSize: '10px', fontWeight: '700', color: '#64748b' }}>{nFiles} attachment{nFiles > 1 ? 's' : ''}</span>}
                     </div>
                     <div style={{ fontSize: '12px', color: '#475569', marginTop: '5px' }}>
                       <strong>From:</strong> {t.sender_name}{t.sender_title ? ' · ' + t.sender_title : ''}
@@ -312,7 +395,8 @@ export default function Messages({ brand, showToast }) {
               <Inp label='Subject' value={subject} onChange={function (v) { setSubject(v) }} placeholder='e.g. Q3 Territory Coverage Report' required />
 
               <div>
-                <div style={{ fontSize: '12px', fontWeight: '700', color: '#334155', marginBottom: '6px' }}>To *</div>
+                <div style={{ fontSize: '12px', fontWeight: '700', color: '#334155', marginBottom: '2px' }}>To *</div>
+                <div style={{ fontSize: '11px', color: '#94a3b8', marginBottom: '6px' }}>Tap as many people as you need.</div>
                 <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
                   {addressBook.map(function (p) {
                     const on = toIds.indexOf(p.id) >= 0
@@ -331,7 +415,8 @@ export default function Messages({ brand, showToast }) {
               </div>
 
               <div>
-                <div style={{ fontSize: '12px', fontWeight: '700', color: '#334155', marginBottom: '6px' }}>Cc (copied — they are notified and can see the thread)</div>
+                <div style={{ fontSize: '12px', fontWeight: '700', color: '#334155', marginBottom: '2px' }}>Cc</div>
+                <div style={{ fontSize: '11px', color: '#94a3b8', marginBottom: '6px' }}>Copied — they are notified and can see the whole thread. Tap as many as you need.</div>
                 <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
                   {addressBook.map(function (p) {
                     const on = ccIds.indexOf(p.id) >= 0
@@ -354,7 +439,43 @@ export default function Messages({ brand, showToast }) {
                   placeholder='Write your message...'
                   style={{ width: '100%', padding: '12px', borderRadius: '10px', border: '1px solid #e2e8f0', fontSize: '13.5px', fontFamily: 'inherit', lineHeight: '1.6', resize: 'vertical', boxSizing: 'border-box' }} />
               </div>
+
+              <div>
+                <div style={{ fontSize: '12px', fontWeight: '700', color: '#334155', marginBottom: '2px' }}>Attachments</div>
+                <div style={{ fontSize: '11px', color: '#94a3b8', marginBottom: '8px' }}>Photos, PDFs, documents — attach as many as you need. Max 20MB each.</div>
+
+                <label style={{ display: 'block', border: '1px dashed #cbd5e1', borderRadius: '10px', padding: '14px', textAlign: 'center', cursor: 'pointer', background: '#f8fafc' }}>
+                  <div style={{ fontSize: '13px', fontWeight: '700', color: '#0f766e' }}>+ Attach files</div>
+                  <div style={{ fontSize: '11px', color: '#94a3b8', marginTop: '2px' }}>You can select more than one at a time</div>
+                  <input type='file' multiple onChange={pickAttachments} style={{ display: 'none' }} />
+                </label>
+
+                {attachments.length > 0 && (
+                  <div style={{ marginTop: '10px', display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                    {attachments.map(function (f, i) {
+                      return (
+                        <div key={i} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '10px', padding: '9px 11px', borderRadius: '8px', border: '1px solid #e2e8f0', background: 'white' }}>
+                          <div style={{ minWidth: 0, flex: 1 }}>
+                            <div style={{ fontSize: '12.5px', fontWeight: '700', color: '#0f172a', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{f.name}</div>
+                            <div style={{ fontSize: '10.5px', color: '#94a3b8' }}>{fmtSize(f.size)}</div>
+                          </div>
+                          <button type='button' onClick={function () { removeAttachment(i) }}
+                            style={{ flexShrink: 0, border: '1px solid #fecaca', background: '#fff5f5', color: '#dc2626', borderRadius: '7px', padding: '5px 9px', fontSize: '11px', fontWeight: '700', cursor: 'pointer' }}>
+                            Remove
+                          </button>
+                        </div>
+                      )
+                    })}
+                  </div>
+                )}
+              </div>
             </div>
+
+            {uploadStatus && (
+              <div style={{ marginTop: '14px', padding: '9px 11px', borderRadius: '8px', background: '#f0fdfa', border: '1px solid #ccfbf1', fontSize: '12px', color: '#0f766e', fontWeight: '600' }}>
+                {uploadStatus}
+              </div>
+            )}
 
             <div style={{ display: 'flex', gap: '10px', marginTop: '20px' }}>
               <GhostBtn onClick={function () { setComposing(false) }} style={{ flex: 1, padding: '13px' }}>Cancel</GhostBtn>
@@ -386,6 +507,7 @@ export default function Messages({ brand, showToast }) {
 
               <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
                 {threadMsgs.map(function (m) {
+                  const files = threadFiles[m.id] || []
                   return (
                     <div key={m.id} style={{ background: 'white', border: '1px solid #e2e8f0', borderRadius: '10px', overflow: 'hidden' }}>
                       <div style={{ padding: '12px 14px', borderBottom: '1px solid #f1f5f9', background: '#fcfdfe' }}>
@@ -409,9 +531,39 @@ export default function Messages({ brand, showToast }) {
                           </div>
                         )}
                       </div>
+
                       <div style={{ padding: '14px', fontSize: '13.5px', color: '#1e293b', lineHeight: '1.65', whiteSpace: 'pre-wrap' }}>
                         {m.body}
                       </div>
+
+                      {files.length > 0 && (
+                        <div style={{ padding: '0 14px 14px 14px' }}>
+                          <div style={{ fontSize: '10.5px', fontWeight: '800', color: '#64748b', letterSpacing: '0.04em', marginBottom: '7px' }}>
+                            ATTACHMENTS ({files.length})
+                          </div>
+                          <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                            {files.map(function (f) {
+                              const isImage = f.file_type && f.file_type.indexOf('image/') === 0
+                              return (
+                                <a key={f.id} href={f.file_url} target='_blank' rel='noreferrer'
+                                  style={{ display: 'flex', alignItems: 'center', gap: '10px', padding: '9px 11px', borderRadius: '8px', border: '1px solid #e2e8f0', background: '#f8fafc', textDecoration: 'none' }}>
+                                  {isImage ? (
+                                    <div style={{ width: '38px', height: '38px', borderRadius: '6px', flexShrink: 0, background: 'url(' + f.file_url + ') center/cover', border: '1px solid #e2e8f0' }} />
+                                  ) : (
+                                    <div style={{ width: '38px', height: '38px', borderRadius: '6px', flexShrink: 0, background: '#0f172a', color: 'white', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '10px', fontWeight: '800' }}>
+                                      FILE
+                                    </div>
+                                  )}
+                                  <div style={{ minWidth: 0, flex: 1 }}>
+                                    <div style={{ fontSize: '12.5px', fontWeight: '700', color: '#0f172a', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{f.file_name}</div>
+                                    <div style={{ fontSize: '10.5px', color: '#94a3b8' }}>{fmtSize(f.file_size)} · Tap to open</div>
+                                  </div>
+                                </a>
+                              )
+                            })}
+                          </div>
+                        </div>
+                      )}
                     </div>
                   )
                 })}
@@ -423,13 +575,44 @@ export default function Messages({ brand, showToast }) {
                 <textarea value={replyBody} onChange={function (e) { setReplyBody(e.target.value) }} rows={4}
                   placeholder='Write your reply...'
                   style={{ width: '100%', padding: '11px', borderRadius: '8px', border: '1px solid #e2e8f0', fontSize: '13.5px', fontFamily: 'inherit', lineHeight: '1.6', resize: 'vertical', boxSizing: 'border-box' }} />
+
+                <label style={{ display: 'block', marginTop: '10px', border: '1px dashed #cbd5e1', borderRadius: '8px', padding: '11px', textAlign: 'center', cursor: 'pointer', background: '#f8fafc' }}>
+                  <span style={{ fontSize: '12px', fontWeight: '700', color: '#0f766e' }}>+ Attach files to reply</span>
+                  <input type='file' multiple onChange={pickReplyFiles} style={{ display: 'none' }} />
+                </label>
+
+                {replyFiles.length > 0 && (
+                  <div style={{ marginTop: '8px', display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                    {replyFiles.map(function (f, i) {
+                      return (
+                        <div key={i} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '10px', padding: '8px 10px', borderRadius: '8px', border: '1px solid #e2e8f0' }}>
+                          <div style={{ minWidth: 0, flex: 1 }}>
+                            <div style={{ fontSize: '12px', fontWeight: '700', color: '#0f172a', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{f.name}</div>
+                            <div style={{ fontSize: '10px', color: '#94a3b8' }}>{fmtSize(f.size)}</div>
+                          </div>
+                          <button type='button' onClick={function () { removeReplyFile(i) }}
+                            style={{ flexShrink: 0, border: '1px solid #fecaca', background: '#fff5f5', color: '#dc2626', borderRadius: '7px', padding: '4px 8px', fontSize: '10.5px', fontWeight: '700', cursor: 'pointer' }}>
+                            Remove
+                          </button>
+                        </div>
+                      )
+                    })}
+                  </div>
+                )}
+
+                {uploadStatus && (
+                  <div style={{ marginTop: '10px', padding: '8px 10px', borderRadius: '8px', background: '#f0fdfa', border: '1px solid #ccfbf1', fontSize: '11.5px', color: '#0f766e', fontWeight: '600' }}>
+                    {uploadStatus}
+                  </div>
+                )}
+
                 <TealBtn onClick={sendReply} style={{ width: '100%', padding: '12px', marginTop: '10px' }}>
                   {sendingReply ? 'Sending...' : 'Send Reply'}
                 </TealBtn>
               </div>
 
               <div style={{ marginTop: '14px', fontSize: '10.5px', color: '#94a3b8', textAlign: 'center', lineHeight: '1.6' }}>
-                This correspondence is an official company record.<br />Sender, recipients and timestamps are permanently logged.
+                This correspondence is an official company record.<br />Sender, recipients, attachments and timestamps are permanently logged.
               </div>
             </div>
           </div>
