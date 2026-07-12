@@ -13,6 +13,8 @@ export default function Staff({ brand, role, perms }) {
   const { msg, show: showToast } = useToast()
   const f = (k, v) => setForm(p => ({ ...p, [k]: v }))
   const isOwner = role === 'Owner'
+  const bType = brand?.business_type || brand?.type
+  const isEnterprise = bType === 'manufacturer_importer' || bType === 'wholesale'
 
   useEffect(() => { load() }, [brand?.id])
 
@@ -21,6 +23,10 @@ export default function Staff({ brand, role, perms }) {
     try { const s = await getStaff(brand.id); setStaff(s || []) } catch (e) {}
     setLoading(false)
   }
+
+  // Every role already used at this company — becomes the suggestion list,
+  // so the company's own hierarchy naturally builds itself as they add people.
+  const usedRoles = [...new Set(staff.map(s => s.role).filter(Boolean))]
 
   async function save() {
     if (!form.fullName || !form.email || !form.password || !form.role) { alert('Please fill in all required fields.'); return }
@@ -70,7 +76,7 @@ export default function Staff({ brand, role, perms }) {
 
   return (
     <div>
-      <SectionHead title='Staff Management' sub='Manage your team and their access levels'
+      <SectionHead title={isEnterprise ? 'Sales Team' : 'Staff Management'} sub='Manage your team and their access levels'
         btn={isOwner ? '+ Add Staff Member' : undefined} onBtn={isOwner ? () => setShowAdd(true) : undefined} />
 
       {!isOwner && (
@@ -128,7 +134,28 @@ export default function Staff({ brand, role, perms }) {
           <Inp label='Full Name *' value={form.fullName} onChange={v => f('fullName', v)} placeholder='Staff full name' required />
           <Inp label='Email Address *' value={form.email} onChange={v => f('email', v)} type='email' placeholder='staff@yourbusiness.ng' required />
           <Inp label='Phone Number' value={form.phone} onChange={v => f('phone', v)} placeholder='08012345678' />
-          <Sel label='Role *' value={form.role} onChange={v => f('role', v)} options={ROLE_LIST} required />
+
+          {isEnterprise ? (
+            <div>
+              <div style={{ fontSize: '12px', fontWeight: '700', color: '#555', marginBottom: '6px' }}>Role *</div>
+              <input
+                list='enterprise-role-suggestions'
+                value={form.role || ''}
+                onChange={e => f('role', e.target.value)}
+                placeholder='e.g. Regional Manager, Medical Rep — type your own'
+                style={{ width: '100%', padding: '11px 12px', borderRadius: '10px', border: '1px solid #e5e7eb', fontSize: '13px', boxSizing: 'border-box' }}
+              />
+              <datalist id='enterprise-role-suggestions'>
+                {usedRoles.map(r => <option key={r} value={r} />)}
+              </datalist>
+              <div style={{ fontSize: '11px', color: '#aaa', marginTop: '4px' }}>
+                {usedRoles.length > 0 ? 'Start typing to reuse a role you\'ve already created, or type a new one.' : 'Type any role name — your team structure is entirely up to you.'}
+              </div>
+            </div>
+          ) : (
+            <Sel label='Role *' value={form.role} onChange={v => f('role', v)} options={ROLE_LIST} required />
+          )}
+
           <Inp label='Password *' value={form.password} onChange={v => f('password', v)} type='password' placeholder='Set a password for them' required />
 
           <div style={{ padding: '12px', borderRadius: '10px', border: '1px solid #e5e7eb' }}>
