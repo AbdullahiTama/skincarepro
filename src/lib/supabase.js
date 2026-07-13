@@ -222,6 +222,84 @@ export async function markMessageRead(recipientRowId) {
   return sbFetch('internal_message_recipients?id=eq.' + recipientRowId, { method: 'PATCH', body: JSON.stringify({ read_at: new Date().toISOString() }), prefer: 'return=minimal' })
 }
 
+// STOCK BATCHES (warehouse receiving, expiry, transfers, adjustments)
+export async function getStockBatches(businessId) {
+  return sbFetch('stock_batches?business_id=eq.' + businessId + '&order=created_at.desc&select=*')
+}
+export async function addStockBatch(data) {
+  return sbFetch('stock_batches', { method: 'POST', body: JSON.stringify(data) })
+}
+export async function updateStockBatch(id, data) {
+  return sbFetch('stock_batches?id=eq.' + id, { method: 'PATCH', body: JSON.stringify(data), prefer: 'return=minimal' })
+}
+export async function deleteStockBatch(id) {
+  return sbFetch('stock_batches?id=eq.' + id, { method: 'DELETE', prefer: 'return=minimal' })
+}
+export async function getStockMovements(businessId) {
+  return sbFetch('stock_movements?business_id=eq.' + businessId + '&order=created_at.desc&select=*&limit=100')
+}
+export async function addStockMovement(data) {
+  return sbFetch('stock_movements', { method: 'POST', body: JSON.stringify(data) })
+}
+
+// Moves part or all of a batch to another warehouse, and logs the movement.
+// If the whole quantity moves, the batch itself is relocated. If only part
+// moves, a new batch row is created at the destination.
+export async function transferStock(batch, toLocationId, qty, movedBy) {
+  const amount = Number(qty)
+  if (!amount || amount <= 0) throw new Error('Enter a quantity greater than zero.')
+  if (amount > batch.quantity) throw new Error('You only have ' + batch.quantity + ' units in this batch.')
+
+  if (amount === batch.quantity) {
+    await updateStockBatch(batch.id, { location_id: toLocationId })
+  } else {
+    await updateStockBatch(batch.id, { quantity: batch.quantity - amount })
+    await addStockBatch({
+      business_id: batch.business_id,
+      location_id: toLocationId,
+      product_id: batch.product_id,
+      product_name: batch.product_name,
+      batch_number: batch.batch_number,
+      quantity: amount,
+      expiry_date: batch.expiry_date,
+      date_received: batch.date_received,
+      supplier_source: batch.supplier_source,
+      storage_location: batch.storage_location,
+      status: batch.status,
+      received_by: batch.received_by,
+    })
+  }
+
+  await addStockMovement({
+    business_id: batch.business_id,
+    batch_id: batch.id,
+    from_location_id: batch.location_id,
+    to_location_id: toLocationId,
+    movement_type: 'transfer',
+    quantity: amount,
+    reason: null,
+    moved_by: movedBy,
+  })
+}
+
+// Corrects a batch quantity (damage, loss, recount) and logs why.
+export async function adjustStock(batch, newQty, reason, movedBy) {
+  const amount = Number(newQty)
+  if (isNaN(amount) || amount < 0) throw new Error('Enter a valid quantity.')
+  const diff = amount - batch.quantity
+  await updateStockBatch(batch.id, { quantity: amount })
+  await addStockMovement({
+    business_id: batch.business_id,
+    batch_id: batch.id,
+    from_location_id: batch.location_id,
+    to_location_id: null,
+    movement_type: 'adjustment',
+    quantity: diff,
+    reason: reason || null,
+    moved_by: movedBy,
+  })
+}
+
 // OFFLINE SUPPORT
 const CACHE = 'carehub_v1'
 export function cacheData(key, data) {
