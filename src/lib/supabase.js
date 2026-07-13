@@ -300,6 +300,96 @@ export async function adjustStock(batch, newQty, reason, movedBy) {
   })
 }
 
+// ORDERS & LPO (rep submits, tagged manager approves, warehouse dispatches)
+export async function getOrders(businessId) {
+  return sbFetch('orders?business_id=eq.' + businessId + '&order=created_at.desc&select=*')
+}
+export async function getOrderItems(orderIds) {
+  if (!orderIds || orderIds.length === 0) return []
+  return sbFetch('order_items?order_id=in.(' + orderIds.join(',') + ')&select=*')
+}
+export async function getOrderWatchers(orderIds) {
+  if (!orderIds || orderIds.length === 0) return []
+  return sbFetch('order_watchers?order_id=in.(' + orderIds.join(',') + ')&select=*')
+}
+export async function getOrderFiles(orderIds) {
+  if (!orderIds || orderIds.length === 0) return []
+  return sbFetch('order_files?order_id=in.(' + orderIds.join(',') + ')&select=*')
+}
+export async function getOrderEvents(orderId) {
+  return sbFetch('order_events?order_id=eq.' + orderId + '&order=created_at.asc&select=*')
+}
+export async function addOrderEvent(data) {
+  return sbFetch('order_events', { method: 'POST', body: JSON.stringify(data) })
+}
+
+// Uploads an LPO or supporting document to the order-files bucket.
+export async function uploadOrderFile(file) {
+  const safeName = file.name.replace(/[^a-zA-Z0-9._-]/g, '_')
+  const path = Date.now() + '-' + Math.floor(Math.random() * 100000) + '-' + safeName
+  const res = await fetch(SB_URL + '/storage/v1/object/order-files/' + encodeURIComponent(path), {
+    method: 'POST',
+    headers: {
+      'apikey': SB_KEY,
+      'Authorization': 'Bearer ' + SB_KEY,
+      'Content-Type': file.type || 'application/octet-stream',
+    },
+    body: file,
+  })
+  if (!res.ok) {
+    const text = await res.text()
+    let detail = text
+    try { detail = JSON.parse(text).message || text } catch (e) {}
+    throw new Error('Upload failed (' + res.status + '): ' + detail)
+  }
+  return SB_URL + '/storage/v1/object/public/order-files/' + encodeURIComponent(path)
+}
+
+// Creates the order, its line items, its watchers, its files, and the opening event.
+export async function createOrder(order, items, watchers, files) {
+  const rows = await sbFetch('orders', { method: 'POST', body: JSON.stringify(order) })
+  const saved = Array.isArray(rows) ? rows[0] : rows
+  if (!saved || !saved.id) throw new Error('Order was not saved — no id returned.')
+
+  if (items && items.length > 0) {
+    const payload = items.map(function (i) { return { ...i, order_id: saved.id } })
+    await sbFetch('order_items', { method: 'POST', body: JSON.stringify(payload), prefer: 'return=minimal' })
+  }
+  if (watchers && watchers.length > 0) {
+    const payload = watchers.map(function (w) { return { ...w, order_id: saved.id } })
+    await sbFetch('order_watchers', { method: 'POST', body: JSON.stringify(payload), prefer: 'return=minimal' })
+  }
+  if (files && files.length > 0) {
+    const payload = files.map(function (f) { return { ...f, order_id: saved.id } })
+    await sbFetch('order_files', { method: 'POST', body: JSON.stringify(payload), prefer: 'return=minimal' })
+  }
+
+  await addOrderEvent({
+    order_id: saved.id,
+    event_type: 'submitted',
+    note: null,
+    actor_name: order.created_by_name,
+  })
+
+  return saved
+}
+
+// Moves an order to a new status and logs who did it and why.
+export async function advanceOrder(orderId, status, extra, actorName, note) {
+  const patch = { status: status }
+  if (extra) {
+    const keys = Object.keys(extra)
+    for (let i = 0; i < keys.length; i++) { patch[keys[i]] = extra[keys[i]] }
+  }
+  await sbFetch('orders?id=eq.' + orderId, { method: 'PATCH', body: JSON.stringify(patch), prefer: 'return=minimal' })
+  await addOrderEvent({
+    order_id: orderId,
+    event_type: status,
+    note: note || null,
+    actor_name: actorName,
+  })
+}
+
 // OFFLINE SUPPORT
 const CACHE = 'carehub_v1'
 export function cacheData(key, data) {
