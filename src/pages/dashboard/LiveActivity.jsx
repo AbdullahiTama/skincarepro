@@ -348,7 +348,6 @@ export default function LiveActivity({ brand, showToast }) {
         async function (pos) {
           const coords = { lat: pos.coords.latitude, lng: pos.coords.longitude }
           setGps(coords)
-          // Turn the coordinates into a real place name.
           const name = await reverseGeocode(coords.lat, coords.lng)
           if (name) setPlaceName(name)
           setFindingPlace(false)
@@ -422,9 +421,11 @@ export default function LiveActivity({ brand, showToast }) {
     }
   }
 
+  // Passes the rep's id so they get notified when a manager replies to them.
   async function postComment(actId) {
     const text = (commentDrafts[actId] || '').trim()
     if (!text) return
+    const act = activities.filter(function (a) { return a.id === actId })[0]
     try {
       await commentOnActivity({
         activity_id: actId,
@@ -432,7 +433,7 @@ export default function LiveActivity({ brand, showToast }) {
         actor_name: meName,
         actor_title: meTitle,
         body: text,
-      })
+      }, brand.id, act ? act.staff_id : null)
       setCommentDrafts(function (prev) {
         const next = { ...prev }
         next[actId] = ''
