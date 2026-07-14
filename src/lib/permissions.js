@@ -1,6 +1,6 @@
 export const ROLES = {
   Owner: {
-    nav: ['dashboard','pos','inventory','clients','appointments','consultation','expenses','debts','purchases','staff','reports','settings','carefind','locations','warehouses','territories','messages','stock','orders','reception','triage','doctor','rx_inbox','lab','imaging'],
+    nav: ['dashboard','pos','inventory','clients','appointments','consultation','expenses','debts','purchases','staff','reports','settings','carefind','locations','warehouses','territories','messages','stock','orders','activity','reception','triage','doctor','rx_inbox','lab','imaging'],
     canEditPrice: true,
     canEditStock: true,
     canDelete: true,
@@ -13,7 +13,7 @@ export const ROLES = {
     label: 'Owner — Full Access',
   },
   Manager: {
-    nav: ['dashboard','pos','inventory','clients','appointments','consultation','expenses','debts','purchases','reports','carefind','messages','stock','orders'],
+    nav: ['dashboard','pos','inventory','clients','appointments','consultation','expenses','debts','purchases','reports','carefind','messages','stock','orders','activity'],
     canEditPrice: false,
     canEditStock: false,
     canDelete: false,
@@ -122,7 +122,7 @@ export const ROLES = {
 // (Manufacturer/Importer and Wholesale let companies type their own role names,
 // so "Regional Manager", "Business Development Manager" etc won't be in the list above).
 export const DEFAULT_STAFF_PERMS = {
-  nav: ['dashboard', 'warehouses', 'territories', 'messages', 'stock', 'orders', 'reports', 'carefind'],
+  nav: ['dashboard', 'warehouses', 'territories', 'messages', 'stock', 'orders', 'activity', 'reports', 'carefind'],
   canEditPrice: false,
   canEditStock: false,
   canDelete: false,
@@ -184,6 +184,7 @@ export const ALL_NAV_HOSPITAL = [
 // Manufacturer / Importer / Wholesale — dedicated warehouse & hierarchy system
 export const ALL_NAV_ENTERPRISE = [
   ['dashboard', '🏠', 'Dashboard'],
+  ['activity', '📡', 'Live Field Activity'],
   ['orders', '📄', 'Orders & LPO'],
   ['warehouses', '🏭', 'Warehouses & Branches'],
   ['stock', '📦', 'Stock & Batches'],
