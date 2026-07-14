@@ -139,6 +139,49 @@ export async function getAdminTeam() { return sbFetch('admin_team?select=*&order
 export async function addAdminTeam(data) { return sbFetch('admin_team', { method: 'POST', body: JSON.stringify(data) }) }
 export async function removeAdminTeam(id) { return sbFetch('admin_team?id=eq.' + id, { method: 'DELETE', prefer: 'return=minimal' }) }
 
+// NOTIFICATIONS (in-app alerts — who needs to know what, right now)
+export async function getMyNotifications(businessId, staffId) {
+  const who = staffId
+    ? 'staff_id=eq.' + staffId
+    : 'is_owner=eq.true'
+  return sbFetch('staff_notifications?business_id=eq.' + businessId + '&' + who + '&order=created_at.desc&select=*&limit=50')
+}
+
+// Writes one notification row per recipient. Never throws — a failed
+// notification must not break the action that triggered it.
+export async function notify(businessId, recipients, kind, title, body, link) {
+  try {
+    if (!recipients || recipients.length === 0) return
+    const rows = recipients.map(function (r) {
+      return {
+        business_id: businessId,
+        staff_id: r.staffId || null,
+        is_owner: !r.staffId,
+        kind: kind,
+        title: title,
+        body: body || null,
+        link: link || null,
+      }
+    })
+    await sbFetch('staff_notifications', { method: 'POST', body: JSON.stringify(rows), prefer: 'return=minimal' })
+  } catch (e) {
+    // Swallow — the order still went through, the message still sent.
+  }
+}
+
+export async function markNotificationRead(id) {
+  return sbFetch('staff_notifications?id=eq.' + id, { method: 'PATCH', body: JSON.stringify({ read_at: new Date().toISOString() }), prefer: 'return=minimal' })
+}
+
+export async function markAllNotificationsRead(businessId, staffId) {
+  const who = staffId ? 'staff_id=eq.' + staffId : 'is_owner=eq.true'
+  return sbFetch('staff_notifications?business_id=eq.' + businessId + '&' + who + '&read_at=is.null', {
+    method: 'PATCH',
+    body: JSON.stringify({ read_at: new Date().toISOString() }),
+    prefer: 'return=minimal',
+  })
+}
+
 // ENTERPRISE LOCATIONS
 export async function getEnterpriseLocations(businessId) { return sbFetch('enterprise_locations?business_id=eq.' + businessId + '&order=created_at.asc&select=*') }
 export async function addEnterpriseLocation(data) { return sbFetch('enterprise_locations', { method: 'POST', body: JSON.stringify(data) }) }
@@ -180,7 +223,6 @@ export async function getMessageFiles(messageIds) {
   return sbFetch('internal_message_files?message_id=in.(' + messageIds.join(',') + ')&select=*')
 }
 
-// Uploads one file to the message-files bucket and returns its public URL.
 export async function uploadMessageFile(file) {
   const safeName = file.name.replace(/[^a-zA-Z0-9._-]/g, '_')
   const path = Date.now() + '-' + Math.floor(Math.random() * 100000) + '-' + safeName
@@ -214,6 +256,21 @@ export async function sendMessage(message, recipients, files) {
     const filePayload = files.map(function (f) { return { ...f, message_id: saved.id } })
     await sbFetch('internal_message_files', { method: 'POST', body: JSON.stringify(filePayload), prefer: 'return=minimal' })
   }
+
+  // Tell everyone on the message that it landed.
+  if (recipients && recipients.length > 0) {
+    const targets = recipients.map(function (r) { return { staffId: r.staff_id } })
+    const subject = message.subject || 'a message'
+    await notify(
+      message.business_id,
+      targets,
+      'message',
+      message.sender_name + ' sent you correspondence',
+      subject,
+      'messages'
+    )
+  }
+
   return saved
 }
 
@@ -299,6 +356,10 @@ export async function adjustStock(batch, newQty, reason, movedBy) {
 export async function getOrders(businessId) {
   return sbFetch('orders?business_id=eq.' + businessId + '&order=created_at.desc&select=*')
 }
+export async function getOrderById(id) {
+  const r = await sbFetch('orders?id=eq.' + id + '&select=*')
+  return r[0] || null
+}
 export async function getOrderItems(orderIds) {
   if (!orderIds || orderIds.length === 0) return []
   return sbFetch('order_items?order_id=in.(' + orderIds.join(',') + ')&select=*')
@@ -364,6 +425,28 @@ export async function createOrder(order, items, watchers, files) {
     actor_name: order.created_by_name,
   })
 
+  // The approver needs to act. Everyone copied just needs to know.
+  await notify(
+    order.business_id,
+    [{ staffId: order.approver_staff_id }],
+    'order_approval',
+    'Order needs your approval',
+    order.created_by_name + ' raised an order for ' + order.customer_name,
+    'orders'
+  )
+
+  if (watchers && watchers.length > 0) {
+    const cc = watchers.map(function (w) { return { staffId: w.staff_id } })
+    await notify(
+      order.business_id,
+      cc,
+      'order_copy',
+      'You were copied on an order',
+      order.created_by_name + ' raised an order for ' + order.customer_name,
+      'orders'
+    )
+  }
+
   return saved
 }
 
@@ -380,6 +463,35 @@ export async function advanceOrder(orderId, status, extra, actorName, note) {
     note: note || null,
     actor_name: actorName,
   })
+
+  // Tell the rep who raised it, and everyone copied.
+  try {
+    const order = await getOrderById(orderId)
+    if (order) {
+      const watchers = await getOrderWatchers([orderId])
+      const targets = [{ staffId: order.created_by_staff_id }]
+      ;(watchers || []).forEach(function (w) {
+        targets.push({ staffId: w.staff_id })
+      })
+
+      const labels = {
+        approved: 'Order approved',
+        rejected: 'Order rejected',
+        processing: 'Order sent to warehouse',
+        dispatched: 'Order dispatched',
+        delivered: 'Order delivered',
+      }
+
+      await notify(
+        order.business_id,
+        targets,
+        'order_update',
+        labels[status] || 'Order updated',
+        actorName + ' — ' + order.customer_name + (note ? ' · ' + note : ''),
+        'orders'
+      )
+    }
+  } catch (e) {}
 }
 
 // FIELD ACTIVITY (live rep activity — company-defined fields, voice notes, GPS)
@@ -430,7 +542,6 @@ export async function getActivityComments(activityIds) {
 
 // Turns GPS coordinates into a readable place name.
 // Uses OpenStreetMap's free service — no key, no cost.
-// If it fails for any reason, we just return null and the record still saves.
 export async function reverseGeocode(lat, lng) {
   try {
     const url = 'https://nominatim.openstreetmap.org/reverse?format=json&lat=' + lat + '&lon=' + lng + '&zoom=18&addressdetails=1'
@@ -459,8 +570,6 @@ export async function reverseGeocode(lat, lng) {
   }
 }
 
-// Records a voice note. The file extension now matches what was actually
-// recorded — an iPhone records mp4, and saving it as .webm made it unplayable.
 export async function uploadActivityVoice(blob) {
   const type = blob.type || 'audio/mp4'
   let ext = 'mp4'
@@ -495,6 +604,16 @@ export async function logActivity(activity, viewers) {
   if (viewers && viewers.length > 0) {
     const payload = viewers.map(function (v) { return { ...v, activity_id: saved.id } })
     await sbFetch('activity_viewers', { method: 'POST', body: JSON.stringify(payload), prefer: 'return=minimal' })
+
+    const targets = viewers.map(function (v) { return { staffId: v.staff_id } })
+    await notify(
+      activity.business_id,
+      targets,
+      'activity',
+      activity.rep_name + ' logged field activity',
+      activity.location_label || null,
+      'activity'
+    )
   }
   return saved
 }
@@ -507,8 +626,21 @@ export async function reactToActivity(activityId, staffId, actorName) {
 export async function unreactToActivity(reactionId) {
   return sbFetch('activity_reactions?id=eq.' + reactionId, { method: 'DELETE', prefer: 'return=minimal' })
 }
-export async function commentOnActivity(data) {
-  return sbFetch('activity_comments', { method: 'POST', body: JSON.stringify(data) })
+
+// A comment on a rep's activity notifies the rep — that's the whole point of it.
+export async function commentOnActivity(data, businessId, repStaffId) {
+  const saved = await sbFetch('activity_comments', { method: 'POST', body: JSON.stringify(data) })
+  if (businessId && repStaffId && repStaffId !== data.staff_id) {
+    await notify(
+      businessId,
+      [{ staffId: repStaffId }],
+      'activity_comment',
+      data.actor_name + ' replied to your activity',
+      data.body,
+      'activity'
+    )
+  }
+  return saved
 }
 
 // OFFLINE SUPPORT
