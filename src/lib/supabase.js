@@ -390,6 +390,98 @@ export async function advanceOrder(orderId, status, extra, actorName, note) {
   })
 }
 
+// FIELD ACTIVITY (live rep activity — company-defined fields, voice notes, GPS)
+export async function getActivityFields(businessId) {
+  return sbFetch('activity_fields?business_id=eq.' + businessId + '&order=sort_order.asc&select=*')
+}
+export async function addActivityField(data) {
+  return sbFetch('activity_fields', { method: 'POST', body: JSON.stringify(data) })
+}
+export async function updateActivityField(id, data) {
+  return sbFetch('activity_fields?id=eq.' + id, { method: 'PATCH', body: JSON.stringify(data), prefer: 'return=minimal' })
+}
+export async function deleteActivityField(id) {
+  return sbFetch('activity_fields?id=eq.' + id, { method: 'DELETE', prefer: 'return=minimal' })
+}
+
+// A rep's standing list of who sees their activity by default
+export async function getDefaultViewers(staffId) {
+  if (!staffId) return []
+  return sbFetch('activity_default_viewers?staff_id=eq.' + staffId + '&select=*')
+}
+export async function setDefaultViewers(businessId, staffId, viewers) {
+  if (staffId) {
+    await sbFetch('activity_default_viewers?staff_id=eq.' + staffId, { method: 'DELETE', prefer: 'return=minimal' })
+  }
+  if (viewers && viewers.length > 0) {
+    const payload = viewers.map(function (v) {
+      return { business_id: businessId, staff_id: staffId, viewer_staff_id: v.viewer_staff_id, viewer_name: v.viewer_name }
+    })
+    await sbFetch('activity_default_viewers', { method: 'POST', body: JSON.stringify(payload), prefer: 'return=minimal' })
+  }
+}
+
+export async function getFieldActivities(businessId) {
+  return sbFetch('field_activities?business_id=eq.' + businessId + '&order=created_at.desc&select=*&limit=100')
+}
+export async function getActivityViewers(activityIds) {
+  if (!activityIds || activityIds.length === 0) return []
+  return sbFetch('activity_viewers?activity_id=in.(' + activityIds.join(',') + ')&select=*')
+}
+export async function getActivityReactions(activityIds) {
+  if (!activityIds || activityIds.length === 0) return []
+  return sbFetch('activity_reactions?activity_id=in.(' + activityIds.join(',') + ')&select=*')
+}
+export async function getActivityComments(activityIds) {
+  if (!activityIds || activityIds.length === 0) return []
+  return sbFetch('activity_comments?activity_id=in.(' + activityIds.join(',') + ')&order=created_at.asc&select=*')
+}
+
+// Records a voice note against an activity. Uploaded free to Supabase storage.
+export async function uploadActivityVoice(blob) {
+  const path = 'voice-' + Date.now() + '-' + Math.floor(Math.random() * 100000) + '.webm'
+  const res = await fetch(SB_URL + '/storage/v1/object/activity-voice/' + encodeURIComponent(path), {
+    method: 'POST',
+    headers: {
+      'apikey': SB_KEY,
+      'Authorization': 'Bearer ' + SB_KEY,
+      'Content-Type': blob.type || 'audio/webm',
+    },
+    body: blob,
+  })
+  if (!res.ok) {
+    const text = await res.text()
+    let detail = text
+    try { detail = JSON.parse(text).message || text } catch (e) {}
+    throw new Error('Voice upload failed (' + res.status + '): ' + detail)
+  }
+  return SB_URL + '/storage/v1/object/public/activity-voice/' + encodeURIComponent(path)
+}
+
+// Logs an activity and who can see it. This is the row that fires the live update.
+export async function logActivity(activity, viewers) {
+  const rows = await sbFetch('field_activities', { method: 'POST', body: JSON.stringify(activity) })
+  const saved = Array.isArray(rows) ? rows[0] : rows
+  if (!saved || !saved.id) throw new Error('Activity was not saved — no id returned.')
+  if (viewers && viewers.length > 0) {
+    const payload = viewers.map(function (v) { return { ...v, activity_id: saved.id } })
+    await sbFetch('activity_viewers', { method: 'POST', body: JSON.stringify(payload), prefer: 'return=minimal' })
+  }
+  return saved
+}
+
+export async function reactToActivity(activityId, staffId, actorName) {
+  return sbFetch('activity_reactions', { method: 'POST', body: JSON.stringify({
+    activity_id: activityId, staff_id: staffId, actor_name: actorName,
+  }) })
+}
+export async function unreactToActivity(reactionId) {
+  return sbFetch('activity_reactions?id=eq.' + reactionId, { method: 'DELETE', prefer: 'return=minimal' })
+}
+export async function commentOnActivity(data) {
+  return sbFetch('activity_comments', { method: 'POST', body: JSON.stringify(data) })
+}
+
 // OFFLINE SUPPORT
 const CACHE = 'carehub_v1'
 export function cacheData(key, data) {
