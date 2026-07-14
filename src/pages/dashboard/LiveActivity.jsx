@@ -4,7 +4,7 @@ import {
   getDefaultViewers, setDefaultViewers,
   getFieldActivities, getActivityViewers, getActivityReactions, getActivityComments,
   logActivity, reactToActivity, unreactToActivity, commentOnActivity,
-  uploadActivityVoice, getStaff, getTerritories,
+  uploadActivityVoice, reverseGeocode, getStaff, getTerritories,
 } from '../../lib/supabase'
 import { watchTable } from '../../lib/realtime'
 import { Card, Inp, TealBtn, GhostBtn } from '../../components/ui'
@@ -24,11 +24,6 @@ const DATE_RANGES = [
 function fmtStamp(d) {
   if (!d) return ''
   return new Date(d).toLocaleString('en-NG', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' })
-}
-
-function fmtDay(d) {
-  if (!d) return ''
-  return new Date(d).toLocaleDateString('en-NG', { day: '2-digit', month: 'short', year: 'numeric' })
 }
 
 function timeAgo(d) {
@@ -58,7 +53,6 @@ function pickAudioType() {
   return ''
 }
 
-// Start of the week (Monday) for a given date
 function startOfWeek(d) {
   const x = new Date(d)
   const day = x.getDay()
@@ -112,6 +106,8 @@ export default function LiveActivity({ brand, showToast }) {
   const [voicePreview, setVoicePreview] = useState(null)
   const [recording, setRecording] = useState(false)
   const [gps, setGps] = useState(null)
+  const [placeName, setPlaceName] = useState('')
+  const [findingPlace, setFindingPlace] = useState(false)
   const [saving, setSaving] = useState(false)
   const [saveStatus, setSaveStatus] = useState('')
 
@@ -203,8 +199,6 @@ export default function LiveActivity({ brand, showToast }) {
     return found ? found.name : 'Unknown'
   }
 
-  // ---- Field setup ----
-
   async function saveField() {
     if (!newField.label.trim()) { alert('Give the field a name.'); return }
     try {
@@ -235,8 +229,6 @@ export default function LiveActivity({ brand, showToast }) {
     }
   }
 
-  // ---- Standing viewer list ----
-
   function openViewerPicker() {
     setViewerDraft(myViewers.map(function (v) { return v.viewer_staff_id }))
     setPickingViewers(true)
@@ -262,11 +254,9 @@ export default function LiveActivity({ brand, showToast }) {
     }
   }
 
-  // ---- Voice recording ----
-
   async function startRecording() {
     if (typeof MediaRecorder === 'undefined') {
-      alert('This browser cannot record audio. Try Chrome or Safari, and make sure you are on https.')
+      alert('This browser cannot record audio.')
       return
     }
     if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
@@ -278,16 +268,14 @@ export default function LiveActivity({ brand, showToast }) {
     try {
       stream = await navigator.mediaDevices.getUserMedia({ audio: true })
     } catch (e) {
-      alert('Microphone blocked: ' + (e.message || e.name) + '. Allow microphone access for this site in your browser settings, then try again.')
+      alert('Microphone blocked: ' + (e.message || e.name) + '. Allow microphone access for this site, then try again.')
       return
     }
 
     try {
       const mime = pickAudioType()
       mimeRef.current = mime || ''
-      const rec = mime
-        ? new MediaRecorder(stream, { mimeType: mime })
-        : new MediaRecorder(stream)
+      const rec = mime ? new MediaRecorder(stream, { mimeType: mime }) : new MediaRecorder(stream)
 
       chunksRef.current = []
       rec.ondataavailable = function (e) {
@@ -303,7 +291,7 @@ export default function LiveActivity({ brand, showToast }) {
           const type = mimeRef.current || 'audio/mp4'
           const blob = new Blob(chunksRef.current, { type: type })
           if (blob.size === 0) {
-            alert('Nothing was recorded. Try holding the record button a little longer.')
+            alert('Nothing was recorded. Hold the button a little longer.')
           } else {
             setVoiceBlob(blob)
             setVoicePreview(URL.createObjectURL(blob))
@@ -340,8 +328,6 @@ export default function LiveActivity({ brand, showToast }) {
     setVoicePreview(null)
   }
 
-  // ---- Logging ----
-
   function openLogger() {
     if (fields.length === 0) {
       alert('No activity fields set up yet. The Owner needs to define what a visit record looks like first.')
@@ -353,13 +339,22 @@ export default function LiveActivity({ brand, showToast }) {
     setVoiceBlob(null)
     setVoicePreview(null)
     setGps(null)
+    setPlaceName('')
     setLogging(true)
 
     if (navigator.geolocation) {
+      setFindingPlace(true)
       navigator.geolocation.getCurrentPosition(
-        function (pos) { setGps({ lat: pos.coords.latitude, lng: pos.coords.longitude }) },
-        function () {},
-        { enableHighAccuracy: true, timeout: 8000 }
+        async function (pos) {
+          const coords = { lat: pos.coords.latitude, lng: pos.coords.longitude }
+          setGps(coords)
+          // Turn the coordinates into a real place name.
+          const name = await reverseGeocode(coords.lat, coords.lng)
+          if (name) setPlaceName(name)
+          setFindingPlace(false)
+        },
+        function () { setFindingPlace(false) },
+        { enableHighAccuracy: true, timeout: 10000 }
       )
     }
   }
@@ -398,7 +393,7 @@ export default function LiveActivity({ brand, showToast }) {
         voice_url: voiceUrl,
         lat: gps ? gps.lat : null,
         lng: gps ? gps.lng : null,
-        location_label: null,
+        location_label: placeName || null,
       }, viewers)
 
       if (showToast) showToast('Activity logged')
@@ -410,8 +405,6 @@ export default function LiveActivity({ brand, showToast }) {
     setSaveStatus('')
     setSaving(false)
   }
-
-  // ---- Reacting / commenting ----
 
   function myReaction(actId) {
     const rows = reactionsByAct[actId] || []
@@ -451,8 +444,6 @@ export default function LiveActivity({ brand, showToast }) {
     }
   }
 
-  // ---- Filtering ----
-
   function inRange(dateStr) {
     if (dateRange === 'all') return true
     const d = new Date(dateStr)
@@ -463,9 +454,7 @@ export default function LiveActivity({ brand, showToast }) {
       start.setHours(0, 0, 0, 0)
       return d >= start
     }
-    if (dateRange === 'week') {
-      return d >= startOfWeek(now)
-    }
+    if (dateRange === 'week') return d >= startOfWeek(now)
     if (dateRange === 'lastweek') {
       const thisWeek = startOfWeek(now)
       const lastWeek = new Date(thisWeek)
@@ -524,16 +513,16 @@ export default function LiveActivity({ brand, showToast }) {
     return f ? f.label : null
   }
 
-  // Columns: fixed ones plus every field the company defined
   const columns = [
     { key: 'date', label: 'Date' },
     { key: 'rep', label: 'Rep' },
     { key: 'territory', label: 'Territory' },
+    { key: 'place', label: 'Location' },
   ].concat(fields.map(function (f) {
     return { key: 'f_' + f.id, label: f.label, fieldId: f.id }
   })).concat([
     { key: 'voice', label: 'Voice' },
-    { key: 'location', label: 'Location' },
+    { key: 'coords', label: 'Map' },
   ])
 
   const shownColumns = columns.filter(function (c) { return !hiddenCols[c.key] })
@@ -542,8 +531,9 @@ export default function LiveActivity({ brand, showToast }) {
     if (col.key === 'date') return fmtStamp(a.created_at)
     if (col.key === 'rep') return a.rep_name
     if (col.key === 'territory') return terrName(a.territory_id) || ''
+    if (col.key === 'place') return a.location_label || ''
     if (col.key === 'voice') return a.voice_url ? 'Yes' : ''
-    if (col.key === 'location') return (a.lat && a.lng) ? (a.lat.toFixed(5) + ', ' + a.lng.toFixed(5)) : ''
+    if (col.key === 'coords') return (a.lat && a.lng) ? (a.lat.toFixed(5) + ', ' + a.lng.toFixed(5)) : ''
     if (col.fieldId) {
       const vals = parseValues(a.values_json)
       return vals[col.fieldId] || ''
@@ -628,7 +618,7 @@ export default function LiveActivity({ brand, showToast }) {
         <div style={{ padding: '12px 14px', borderRadius: '10px', background: '#fffbeb', border: '1px solid #fcd34d', marginBottom: '18px' }}>
           <div style={{ fontSize: '13px', fontWeight: '800', color: '#d97706' }}>Nobody is seeing your activity yet</div>
           <div style={{ fontSize: '12px', color: '#92400e', marginTop: '2px' }}>
-            Tap "Who sees my activity" and pick your managers. Set it once and you never think about it again.
+            Tap "Who sees my activity" and pick your managers.
           </div>
         </div>
       )}
@@ -769,7 +759,7 @@ export default function LiveActivity({ brand, showToast }) {
                             </td>
                           )
                         }
-                        if (c.key === 'location' && a.lat && a.lng) {
+                        if (c.key === 'coords' && a.lat && a.lng) {
                           return (
                             <td key={c.key} style={{ padding: '10px 14px', borderBottom: '1px solid #f1f5f9', whiteSpace: 'nowrap' }}>
                               <a href={'https://www.google.com/maps?q=' + a.lat + ',' + a.lng} target='_blank' rel='noreferrer'
@@ -814,11 +804,16 @@ export default function LiveActivity({ brand, showToast }) {
                       {timeAgo(a.created_at)} · {fmtStamp(a.created_at)}
                       {terrName(a.territory_id) ? ' · ' + terrName(a.territory_id) : ''}
                     </div>
+                    {a.location_label && (
+                      <div style={{ fontSize: '12px', color: '#0f766e', fontWeight: '600', marginTop: '4px' }}>
+                        {a.location_label}
+                      </div>
+                    )}
                   </div>
                   {a.lat && a.lng && (
                     <a href={'https://www.google.com/maps?q=' + a.lat + ',' + a.lng} target='_blank' rel='noreferrer'
                       style={{ flexShrink: 0, fontSize: '11px', fontWeight: '700', color: '#0f766e', background: '#f0fdfa', border: '1px solid #ccfbf1', borderRadius: '20px', padding: '5px 11px', textDecoration: 'none' }}>
-                      View location
+                      View on map
                     </a>
                   )}
                 </div>
@@ -956,9 +951,19 @@ export default function LiveActivity({ brand, showToast }) {
       {logging && (
         <div style={{ position: 'fixed', inset: 0, background: 'rgba(15,23,42,0.55)', display: 'flex', alignItems: 'flex-end', justifyContent: 'center', zIndex: 50 }}>
           <div style={{ background: 'white', width: '100%', maxWidth: '600px', maxHeight: '92vh', overflowY: 'auto', borderRadius: '16px 16px 0 0', padding: '20px' }}>
-            <div style={{ fontSize: '16px', fontWeight: '900', color: '#0f172a', marginBottom: '4px' }}>Log Activity</div>
-            <div style={{ fontSize: '11.5px', color: '#888', marginBottom: '16px' }}>
-              {gps ? 'Location captured' : 'Getting your location...'}
+            <div style={{ fontSize: '16px', fontWeight: '900', color: '#0f172a', marginBottom: '6px' }}>Log Activity</div>
+
+            <div style={{ padding: '10px 12px', borderRadius: '8px', background: placeName ? '#f0fdfa' : '#f8fafc', border: '1px solid ' + (placeName ? '#ccfbf1' : '#e2e8f0'), marginBottom: '16px' }}>
+              <div style={{ fontSize: '10px', fontWeight: '800', color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '0.04em' }}>Location</div>
+              <div style={{ fontSize: '12.5px', color: placeName ? '#0f766e' : '#94a3b8', fontWeight: placeName ? '700' : '500', marginTop: '2px' }}>
+                {placeName
+                  ? placeName
+                  : findingPlace
+                    ? 'Finding where you are...'
+                    : gps
+                      ? 'Coordinates captured'
+                      : 'Location not available'}
+              </div>
             </div>
 
             <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
@@ -1184,7 +1189,7 @@ export default function LiveActivity({ brand, showToast }) {
           <div style={{ background: 'white', width: '100%', maxWidth: '560px', maxHeight: '85vh', overflowY: 'auto', borderRadius: '16px 16px 0 0', padding: '20px' }}>
             <div style={{ fontSize: '16px', fontWeight: '900', color: '#0f172a', marginBottom: '4px' }}>Who sees my activity</div>
             <div style={{ fontSize: '11.5px', color: '#888', marginBottom: '16px' }}>
-              Set this once. Everything you log goes to these people, live. You can still change it on any single activity.
+              Set this once. Everything you log goes to these people, live.
             </div>
 
             {people.length === 0 && <div style={{ fontSize: '13px', color: '#aaa' }}>No colleagues to pick yet.</div>}
