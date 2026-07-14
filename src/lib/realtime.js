@@ -5,56 +5,51 @@ const SB_KEY = 'sb_publishable_xEs5f4L6qSxqXikPZM06SQ_TKy4UNFz'
 
 // This client exists ONLY to listen for live updates over a websocket.
 // Every other database call in CareHub still goes through sbFetch in supabase.js.
-// Nothing else changes.
-export const realtime = createClient(SB_URL, SB_KEY, {
-  auth: { persistSession: false },
-})
-
-// Listens for new rows on a table for one business, and calls back when one arrives.
-// Returns an unsubscribe function — always call it when the page closes,
-// or the connection stays open and drains the phone battery.
-export function watchTable(tableName, businessId, onInsert) {
-  const channel = realtime
-    .channel('watch-' + tableName + '-' + businessId)
-    .on(
-      'postgres_changes',
-      {
-        event: 'INSERT',
-        schema: 'public',
-        table: tableName,
-        filter: 'business_id=eq.' + businessId,
-      },
-      function (payload) {
-        if (onInsert) onInsert(payload.new)
-      }
-    )
-    .subscribe()
-oi
-  return function unsubscribe() {
-    try { realtime.removeChannel(channel) } catch (e) {}
-  }
+let client = null
+try {
+  client = createClient(SB_URL, SB_KEY, {
+    auth: { persistSession: false },
+  })
+} catch (e) {
+  client = null
 }
 
-// Same, but filtered by activity instead of business — for comments and reactions
-// arriving on one specific activity.
-export function watchActivityChildren(tableName, activityId, onInsert) {
-  const channel = realtime
-    .channel('watch-' + tableName + '-' + activityId)
-    .on(
-      'postgres_changes',
-      {
-        event: 'INSERT',
-        schema: 'public',
-        table: tableName,
-        filter: 'activity_id=eq.' + activityId,
-      },
-      function (payload) {
-        if (onInsert) onInsert(payload.new)
-      }
-    )
-    .subscribe()
+export const realtime = client
+
+// Listens for new rows on a table for one business.
+// If realtime can't connect for any reason, this returns a no-op instead of
+// crashing the page — the page still works, it just isn't live.
+export function watchTable(tableName, businessId, onInsert) {
+  if (!client || !businessId) {
+    return function () {}
+  }
+
+  let channel = null
+  try {
+    channel = client
+      .channel('watch-' + tableName + '-' + businessId)
+      .on(
+        'postgres_changes',
+        {
+          event: 'INSERT',
+          schema: 'public',
+          table: tableName,
+          filter: 'business_id=eq.' + businessId,
+        },
+        function (payload) {
+          try {
+            if (onInsert && payload && payload.new) onInsert(payload.new)
+          } catch (e) {}
+        }
+      )
+      .subscribe()
+  } catch (e) {
+    return function () {}
+  }
 
   return function unsubscribe() {
-    try { realtime.removeChannel(channel) } catch (e) {}
+    try {
+      if (channel) client.removeChannel(channel)
+    } catch (e) {}
   }
 }
