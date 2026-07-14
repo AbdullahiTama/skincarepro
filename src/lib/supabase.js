@@ -181,7 +181,6 @@ export async function getMessageFiles(messageIds) {
 }
 
 // Uploads one file to the message-files bucket and returns its public URL.
-// Throws with the real reason so nothing fails silently.
 export async function uploadMessageFile(file) {
   const safeName = file.name.replace(/[^a-zA-Z0-9._-]/g, '_')
   const path = Date.now() + '-' + Math.floor(Math.random() * 100000) + '-' + safeName
@@ -242,9 +241,6 @@ export async function addStockMovement(data) {
   return sbFetch('stock_movements', { method: 'POST', body: JSON.stringify(data) })
 }
 
-// Moves part or all of a batch to another warehouse, and logs the movement.
-// If the whole quantity moves, the batch itself is relocated. If only part
-// moves, a new batch row is created at the destination.
 export async function transferStock(batch, toLocationId, qty, movedBy) {
   const amount = Number(qty)
   if (!amount || amount <= 0) throw new Error('Enter a quantity greater than zero.')
@@ -282,7 +278,6 @@ export async function transferStock(batch, toLocationId, qty, movedBy) {
   })
 }
 
-// Corrects a batch quantity (damage, loss, recount) and logs why.
 export async function adjustStock(batch, newQty, reason, movedBy) {
   const amount = Number(newQty)
   if (isNaN(amount) || amount < 0) throw new Error('Enter a valid quantity.')
@@ -323,7 +318,6 @@ export async function addOrderEvent(data) {
   return sbFetch('order_events', { method: 'POST', body: JSON.stringify(data) })
 }
 
-// Uploads an LPO or supporting document to the order-files bucket.
 export async function uploadOrderFile(file) {
   const safeName = file.name.replace(/[^a-zA-Z0-9._-]/g, '_')
   const path = Date.now() + '-' + Math.floor(Math.random() * 100000) + '-' + safeName
@@ -345,7 +339,6 @@ export async function uploadOrderFile(file) {
   return SB_URL + '/storage/v1/object/public/order-files/' + encodeURIComponent(path)
 }
 
-// Creates the order, its line items, its watchers, its files, and the opening event.
 export async function createOrder(order, items, watchers, files) {
   const rows = await sbFetch('orders', { method: 'POST', body: JSON.stringify(order) })
   const saved = Array.isArray(rows) ? rows[0] : rows
@@ -374,7 +367,6 @@ export async function createOrder(order, items, watchers, files) {
   return saved
 }
 
-// Moves an order to a new status and logs who did it and why.
 export async function advanceOrder(orderId, status, extra, actorName, note) {
   const patch = { status: status }
   if (extra) {
@@ -404,7 +396,6 @@ export async function deleteActivityField(id) {
   return sbFetch('activity_fields?id=eq.' + id, { method: 'DELETE', prefer: 'return=minimal' })
 }
 
-// A rep's standing list of who sees their activity by default
 export async function getDefaultViewers(staffId) {
   if (!staffId) return []
   return sbFetch('activity_default_viewers?staff_id=eq.' + staffId + '&select=*')
@@ -437,15 +428,54 @@ export async function getActivityComments(activityIds) {
   return sbFetch('activity_comments?activity_id=in.(' + activityIds.join(',') + ')&order=created_at.asc&select=*')
 }
 
-// Records a voice note against an activity. Uploaded free to Supabase storage.
+// Turns GPS coordinates into a readable place name.
+// Uses OpenStreetMap's free service — no key, no cost.
+// If it fails for any reason, we just return null and the record still saves.
+export async function reverseGeocode(lat, lng) {
+  try {
+    const url = 'https://nominatim.openstreetmap.org/reverse?format=json&lat=' + lat + '&lon=' + lng + '&zoom=18&addressdetails=1'
+    const res = await fetch(url, { headers: { 'Accept': 'application/json' } })
+    if (!res.ok) return null
+    const data = await res.json()
+    if (!data) return null
+
+    const a = data.address || {}
+    const parts = []
+    if (a.amenity) parts.push(a.amenity)
+    else if (a.building) parts.push(a.building)
+    else if (a.shop) parts.push(a.shop)
+    if (a.road) parts.push(a.road)
+    if (a.suburb) parts.push(a.suburb)
+    else if (a.neighbourhood) parts.push(a.neighbourhood)
+    if (a.city) parts.push(a.city)
+    else if (a.town) parts.push(a.town)
+    else if (a.state) parts.push(a.state)
+
+    if (parts.length > 0) return parts.join(', ')
+    if (data.display_name) return data.display_name
+    return null
+  } catch (e) {
+    return null
+  }
+}
+
+// Records a voice note. The file extension now matches what was actually
+// recorded — an iPhone records mp4, and saving it as .webm made it unplayable.
 export async function uploadActivityVoice(blob) {
-  const path = 'voice-' + Date.now() + '-' + Math.floor(Math.random() * 100000) + '.webm'
+  const type = blob.type || 'audio/mp4'
+  let ext = 'mp4'
+  if (type.indexOf('webm') >= 0) ext = 'webm'
+  else if (type.indexOf('ogg') >= 0) ext = 'ogg'
+  else if (type.indexOf('aac') >= 0) ext = 'aac'
+  else if (type.indexOf('mpeg') >= 0) ext = 'mp3'
+
+  const path = 'voice-' + Date.now() + '-' + Math.floor(Math.random() * 100000) + '.' + ext
   const res = await fetch(SB_URL + '/storage/v1/object/activity-voice/' + encodeURIComponent(path), {
     method: 'POST',
     headers: {
       'apikey': SB_KEY,
       'Authorization': 'Bearer ' + SB_KEY,
-      'Content-Type': blob.type || 'audio/webm',
+      'Content-Type': type,
     },
     body: blob,
   })
@@ -458,7 +488,6 @@ export async function uploadActivityVoice(blob) {
   return SB_URL + '/storage/v1/object/public/activity-voice/' + encodeURIComponent(path)
 }
 
-// Logs an activity and who can see it. This is the row that fires the live update.
 export async function logActivity(activity, viewers) {
   const rows = await sbFetch('field_activities', { method: 'POST', body: JSON.stringify(activity) })
   const saved = Array.isArray(rows) ? rows[0] : rows
