@@ -11,9 +11,24 @@ import { Card, Inp, TealBtn, GhostBtn } from '../../components/ui'
 
 const FIELD_TYPES = ['text', 'long text', 'number', 'date', 'choice']
 
+const DATE_RANGES = [
+  ['all', 'All time'],
+  ['today', 'Today'],
+  ['week', 'This week'],
+  ['lastweek', 'Last week'],
+  ['month', 'This month'],
+  ['year', 'This year'],
+  ['custom', 'Custom'],
+]
+
 function fmtStamp(d) {
   if (!d) return ''
   return new Date(d).toLocaleString('en-NG', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' })
+}
+
+function fmtDay(d) {
+  if (!d) return ''
+  return new Date(d).toLocaleDateString('en-NG', { day: '2-digit', month: 'short', year: 'numeric' })
 }
 
 function timeAgo(d) {
@@ -27,6 +42,35 @@ function timeAgo(d) {
 
 function readAuth() {
   try { return JSON.parse(localStorage.getItem('carehub_auth') || '{}') } catch (e) { return {} }
+}
+
+// iPhone Safari cannot record webm. Pick whatever this browser actually supports.
+function pickAudioType() {
+  if (typeof MediaRecorder === 'undefined') return null
+  const candidates = ['audio/mp4', 'audio/webm;codecs=opus', 'audio/webm', 'audio/aac', 'audio/ogg']
+  for (let i = 0; i < candidates.length; i++) {
+    try {
+      if (MediaRecorder.isTypeSupported && MediaRecorder.isTypeSupported(candidates[i])) {
+        return candidates[i]
+      }
+    } catch (e) {}
+  }
+  return ''
+}
+
+// Start of the week (Monday) for a given date
+function startOfWeek(d) {
+  const x = new Date(d)
+  const day = x.getDay()
+  const diff = day === 0 ? 6 : day - 1
+  x.setDate(x.getDate() - diff)
+  x.setHours(0, 0, 0, 0)
+  return x
+}
+
+function csvCell(v) {
+  const s = v === null || v === undefined ? '' : String(v)
+  return '"' + s.replace(/"/g, '""') + '"'
 }
 
 export default function LiveActivity({ brand, showToast }) {
@@ -51,6 +95,15 @@ export default function LiveActivity({ brand, showToast }) {
   const [loading, setLoading] = useState(true)
   const [liveOn, setLiveOn] = useState(false)
 
+  const [view, setView] = useState('feed')
+  const [dateRange, setDateRange] = useState('all')
+  const [customFrom, setCustomFrom] = useState('')
+  const [customTo, setCustomTo] = useState('')
+  const [filterRep, setFilterRep] = useState('all')
+  const [filterTerr, setFilterTerr] = useState('all')
+  const [hiddenCols, setHiddenCols] = useState({})
+  const [pickingCols, setPickingCols] = useState(false)
+
   const [logging, setLogging] = useState(false)
   const [values, setValues] = useState({})
   const [terrId, setTerrId] = useState('')
@@ -73,10 +126,10 @@ export default function LiveActivity({ brand, showToast }) {
 
   const recorderRef = useRef(null)
   const chunksRef = useRef([])
+  const mimeRef = useRef('')
 
   useEffect(() => { load() }, [brand?.id])
 
-  // Live: when any rep logs an activity, it lands here without a refresh.
   useEffect(() => {
     if (!brand || !brand.id) return
     const stop = watchTable('field_activities', brand.id, function (row) {
@@ -150,7 +203,7 @@ export default function LiveActivity({ brand, showToast }) {
     return found ? found.name : 'Unknown'
   }
 
-  // ---- Field setup (owner defines what a visit record looks like) ----
+  // ---- Field setup ----
 
   async function saveField() {
     if (!newField.label.trim()) { alert('Give the field a name.'); return }
@@ -209,34 +262,76 @@ export default function LiveActivity({ brand, showToast }) {
     }
   }
 
-  // ---- Voice recording (free — stored in Supabase) ----
+  // ---- Voice recording ----
 
   async function startRecording() {
+    if (typeof MediaRecorder === 'undefined') {
+      alert('This browser cannot record audio. Try Chrome or Safari, and make sure you are on https.')
+      return
+    }
+    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+      alert('This browser will not give access to the microphone.')
+      return
+    }
+
+    let stream = null
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true })
-      const rec = new MediaRecorder(stream)
+      stream = await navigator.mediaDevices.getUserMedia({ audio: true })
+    } catch (e) {
+      alert('Microphone blocked: ' + (e.message || e.name) + '. Allow microphone access for this site in your browser settings, then try again.')
+      return
+    }
+
+    try {
+      const mime = pickAudioType()
+      mimeRef.current = mime || ''
+      const rec = mime
+        ? new MediaRecorder(stream, { mimeType: mime })
+        : new MediaRecorder(stream)
+
       chunksRef.current = []
       rec.ondataavailable = function (e) {
         if (e.data && e.data.size > 0) chunksRef.current.push(e.data)
       }
-      rec.onstop = function () {
-        const blob = new Blob(chunksRef.current, { type: 'audio/webm' })
-        setVoiceBlob(blob)
-        setVoicePreview(URL.createObjectURL(blob))
-        stream.getTracks().forEach(function (t) { t.stop() })
+      rec.onerror = function (e) {
+        alert('Recording error: ' + ((e && e.error && e.error.message) || 'unknown'))
+        setRecording(false)
+        try { stream.getTracks().forEach(function (t) { t.stop() }) } catch (x) {}
       }
+      rec.onstop = function () {
+        try {
+          const type = mimeRef.current || 'audio/mp4'
+          const blob = new Blob(chunksRef.current, { type: type })
+          if (blob.size === 0) {
+            alert('Nothing was recorded. Try holding the record button a little longer.')
+          } else {
+            setVoiceBlob(blob)
+            setVoicePreview(URL.createObjectURL(blob))
+          }
+        } catch (e) {
+          alert('Could not finish the recording: ' + e.message)
+        }
+        try { stream.getTracks().forEach(function (t) { t.stop() }) } catch (x) {}
+      }
+
       recorderRef.current = rec
       rec.start()
       setRecording(true)
     } catch (e) {
-      alert('Could not start recording: ' + e.message + '. Check that microphone access is allowed.')
+      alert('Could not start recording: ' + (e.message || e.name))
+      try { stream.getTracks().forEach(function (t) { t.stop() }) } catch (x) {}
+      setRecording(false)
     }
   }
 
   function stopRecording() {
     try {
-      if (recorderRef.current) recorderRef.current.stop()
-    } catch (e) {}
+      if (recorderRef.current && recorderRef.current.state !== 'inactive') {
+        recorderRef.current.stop()
+      }
+    } catch (e) {
+      alert('Could not stop cleanly: ' + e.message)
+    }
     setRecording(false)
   }
 
@@ -245,7 +340,7 @@ export default function LiveActivity({ brand, showToast }) {
     setVoicePreview(null)
   }
 
-  // ---- Logging an activity ----
+  // ---- Logging ----
 
   function openLogger() {
     if (fields.length === 0) {
@@ -260,12 +355,9 @@ export default function LiveActivity({ brand, showToast }) {
     setGps(null)
     setLogging(true)
 
-    // Grab GPS quietly in the background. If it fails, we just log without it.
     if (navigator.geolocation) {
       navigator.geolocation.getCurrentPosition(
-        function (pos) {
-          setGps({ lat: pos.coords.latitude, lng: pos.coords.longitude })
-        },
+        function (pos) { setGps({ lat: pos.coords.latitude, lng: pos.coords.longitude }) },
         function () {},
         { enableHighAccuracy: true, timeout: 8000 }
       )
@@ -273,9 +365,7 @@ export default function LiveActivity({ brand, showToast }) {
   }
 
   async function submitActivity() {
-    const missing = fields.filter(function (f) {
-      return f.required && !values[f.id]
-    })
+    const missing = fields.filter(function (f) { return f.required && !values[f.id] })
     if (missing.length > 0) {
       alert('Please fill in: ' + missing.map(function (f) { return f.label }).join(', '))
       return
@@ -321,7 +411,7 @@ export default function LiveActivity({ brand, showToast }) {
     setSaving(false)
   }
 
-  // ---- Reacting and commenting ----
+  // ---- Reacting / commenting ----
 
   function myReaction(actId) {
     const rows = reactionsByAct[actId] || []
@@ -331,11 +421,8 @@ export default function LiveActivity({ brand, showToast }) {
   async function toggleReaction(actId) {
     const existing = myReaction(actId)
     try {
-      if (existing) {
-        await unreactToActivity(existing.id)
-      } else {
-        await reactToActivity(actId, meStaffId, meName)
-      }
+      if (existing) await unreactToActivity(existing.id)
+      else await reactToActivity(actId, meStaffId, meName)
       load()
     } catch (e) {
       alert('Could not react: ' + e.message)
@@ -364,12 +451,63 @@ export default function LiveActivity({ brand, showToast }) {
     }
   }
 
-  // Only show activities I raised, or ones I was tagged to see. Owner sees all.
-  const visible = activities.filter(function (a) {
+  // ---- Filtering ----
+
+  function inRange(dateStr) {
+    if (dateRange === 'all') return true
+    const d = new Date(dateStr)
+    const now = new Date()
+
+    if (dateRange === 'today') {
+      const start = new Date()
+      start.setHours(0, 0, 0, 0)
+      return d >= start
+    }
+    if (dateRange === 'week') {
+      return d >= startOfWeek(now)
+    }
+    if (dateRange === 'lastweek') {
+      const thisWeek = startOfWeek(now)
+      const lastWeek = new Date(thisWeek)
+      lastWeek.setDate(lastWeek.getDate() - 7)
+      return d >= lastWeek && d < thisWeek
+    }
+    if (dateRange === 'month') {
+      const start = new Date(now.getFullYear(), now.getMonth(), 1)
+      return d >= start
+    }
+    if (dateRange === 'year') {
+      const start = new Date(now.getFullYear(), 0, 1)
+      return d >= start
+    }
+    if (dateRange === 'custom') {
+      if (customFrom) {
+        const from = new Date(customFrom)
+        from.setHours(0, 0, 0, 0)
+        if (d < from) return false
+      }
+      if (customTo) {
+        const to = new Date(customTo)
+        to.setHours(23, 59, 59, 999)
+        if (d > to) return false
+      }
+      return true
+    }
+    return true
+  }
+
+  const permitted = activities.filter(function (a) {
     if (isOwner) return true
     if (a.staff_id === meStaffId) return true
     const vs = viewersByAct[a.id] || []
     return vs.some(function (v) { return v.staff_id === meStaffId })
+  })
+
+  const visible = permitted.filter(function (a) {
+    if (!inRange(a.created_at)) return false
+    if (filterRep !== 'all' && a.staff_id !== filterRep) return false
+    if (filterTerr !== 'all' && a.territory_id !== filterTerr) return false
+    return true
   })
 
   function terrName(id) {
@@ -386,8 +524,80 @@ export default function LiveActivity({ brand, showToast }) {
     return f ? f.label : null
   }
 
+  // Columns: fixed ones plus every field the company defined
+  const columns = [
+    { key: 'date', label: 'Date' },
+    { key: 'rep', label: 'Rep' },
+    { key: 'territory', label: 'Territory' },
+  ].concat(fields.map(function (f) {
+    return { key: 'f_' + f.id, label: f.label, fieldId: f.id }
+  })).concat([
+    { key: 'voice', label: 'Voice' },
+    { key: 'location', label: 'Location' },
+  ])
+
+  const shownColumns = columns.filter(function (c) { return !hiddenCols[c.key] })
+
+  function cellValue(a, col) {
+    if (col.key === 'date') return fmtStamp(a.created_at)
+    if (col.key === 'rep') return a.rep_name
+    if (col.key === 'territory') return terrName(a.territory_id) || ''
+    if (col.key === 'voice') return a.voice_url ? 'Yes' : ''
+    if (col.key === 'location') return (a.lat && a.lng) ? (a.lat.toFixed(5) + ', ' + a.lng.toFixed(5)) : ''
+    if (col.fieldId) {
+      const vals = parseValues(a.values_json)
+      return vals[col.fieldId] || ''
+    }
+    return ''
+  }
+
+  function toggleCol(key) {
+    setHiddenCols(function (prev) {
+      const next = { ...prev }
+      if (next[key]) delete next[key]
+      else next[key] = true
+      return next
+    })
+  }
+
+  function rangeLabel() {
+    const found = DATE_RANGES.filter(function (r) { return r[0] === dateRange })[0]
+    return found ? found[1] : 'All time'
+  }
+
+  function exportCSV() {
+    if (visible.length === 0) {
+      alert('Nothing to export with the current filters.')
+      return
+    }
+    try {
+      const header = shownColumns.map(function (c) { return csvCell(c.label) }).join(',')
+      const rows = visible.map(function (a) {
+        return shownColumns.map(function (c) { return csvCell(cellValue(a, c)) }).join(',')
+      })
+      const csv = [header].concat(rows).join('\n')
+
+      const blob = new Blob(['\ufeff' + csv], { type: 'text/csv;charset=utf-8;' })
+      const url = URL.createObjectURL(blob)
+      const a = document.createElement('a')
+
+      const repPart = filterRep === 'all' ? 'all-reps' : (nameFor(filterRep) || 'rep').replace(/\s+/g, '-').toLowerCase()
+      const datePart = rangeLabel().replace(/\s+/g, '-').toLowerCase()
+      a.href = url
+      a.download = 'field-activity-' + repPart + '-' + datePart + '.csv'
+      document.body.appendChild(a)
+      a.click()
+      document.body.removeChild(a)
+      URL.revokeObjectURL(url)
+
+      if (showToast) showToast('Exported ' + visible.length + ' record' + (visible.length > 1 ? 's' : ''))
+    } catch (e) {
+      alert('Could not export: ' + e.message)
+    }
+  }
+
   return (
-    <div style={{ padding: '24px', maxWidth: '900px' }}>
+    <div style={{ padding: '24px', maxWidth: '1100px' }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '18px', gap: '12px', flexWrap: 'wrap' }}>
         <div>
           <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
@@ -427,147 +637,321 @@ export default function LiveActivity({ brand, showToast }) {
         <div style={{ padding: '12px 14px', borderRadius: '10px', background: '#fffbeb', border: '1px solid #fcd34d', marginBottom: '18px' }}>
           <div style={{ fontSize: '13px', fontWeight: '800', color: '#d97706' }}>No activity fields set up yet</div>
           <div style={{ fontSize: '12px', color: '#92400e', marginTop: '2px' }}>
-            Tap "Set up fields" and decide what a visit record should capture — customer, products discussed, outcome, whatever suits your company.
+            Tap "Set up fields" and decide what a visit record should capture.
           </div>
         </div>
       )}
+
+      <div style={{ display: 'flex', gap: '6px', marginBottom: '12px' }}>
+        {[['feed', 'Feed'], ['table', 'Table']].map(function (v) {
+          const on = view === v[0]
+          return (
+            <button key={v[0]} onClick={function () { setView(v[0]) }}
+              style={{ fontSize: '12.5px', fontWeight: '800', padding: '9px 18px', borderRadius: '10px', cursor: 'pointer',
+                border: on ? '1px solid #0f172a' : '1px solid #e2e8f0',
+                background: on ? '#0f172a' : 'white',
+                color: on ? 'white' : '#64748b' }}>
+              {v[1]}
+            </button>
+          )
+        })}
+      </div>
+
+      <Card style={{ padding: '14px', marginBottom: '16px' }}>
+        <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap', marginBottom: '10px' }}>
+          {DATE_RANGES.map(function (r) {
+            const on = dateRange === r[0]
+            return (
+              <button key={r[0]} onClick={function () { setDateRange(r[0]) }}
+                style={{ fontSize: '11.5px', fontWeight: '700', padding: '7px 12px', borderRadius: '20px', cursor: 'pointer',
+                  border: on ? '1px solid #0f766e' : '1px solid #e2e8f0',
+                  background: on ? '#0f766e' : 'white',
+                  color: on ? 'white' : '#64748b' }}>
+                {r[1]}
+              </button>
+            )
+          })}
+        </div>
+
+        {dateRange === 'custom' && (
+          <div style={{ display: 'flex', gap: '8px', marginBottom: '10px' }}>
+            <div style={{ flex: 1 }}>
+              <div style={{ fontSize: '11px', fontWeight: '700', color: '#64748b', marginBottom: '4px' }}>From</div>
+              <input type='date' value={customFrom} onChange={function (e) { setCustomFrom(e.target.value) }}
+                style={{ width: '100%', padding: '9px 10px', borderRadius: '8px', border: '1px solid #e2e8f0', fontSize: '12.5px', boxSizing: 'border-box' }} />
+            </div>
+            <div style={{ flex: 1 }}>
+              <div style={{ fontSize: '11px', fontWeight: '700', color: '#64748b', marginBottom: '4px' }}>To</div>
+              <input type='date' value={customTo} onChange={function (e) { setCustomTo(e.target.value) }}
+                style={{ width: '100%', padding: '9px 10px', borderRadius: '8px', border: '1px solid #e2e8f0', fontSize: '12.5px', boxSizing: 'border-box' }} />
+            </div>
+          </div>
+        )}
+
+        <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', alignItems: 'flex-end' }}>
+          <div style={{ flex: 1, minWidth: '150px' }}>
+            <div style={{ fontSize: '11px', fontWeight: '700', color: '#64748b', marginBottom: '4px' }}>Rep</div>
+            <select value={filterRep} onChange={function (e) { setFilterRep(e.target.value) }}
+              style={{ width: '100%', padding: '9px 10px', borderRadius: '8px', border: '1px solid #e2e8f0', fontSize: '12.5px', background: 'white' }}>
+              <option value='all'>All reps</option>
+              {staffList.map(function (s) { return <option key={s.id} value={s.id}>{s.full_name}</option> })}
+            </select>
+          </div>
+
+          <div style={{ flex: 1, minWidth: '150px' }}>
+            <div style={{ fontSize: '11px', fontWeight: '700', color: '#64748b', marginBottom: '4px' }}>Territory</div>
+            <select value={filterTerr} onChange={function (e) { setFilterTerr(e.target.value) }}
+              style={{ width: '100%', padding: '9px 10px', borderRadius: '8px', border: '1px solid #e2e8f0', fontSize: '12.5px', background: 'white' }}>
+              <option value='all'>All territories</option>
+              {territories.map(function (t) { return <option key={t.id} value={t.id}>{t.name}</option> })}
+            </select>
+          </div>
+
+          {view === 'table' && (
+            <button onClick={function () { setPickingCols(true) }}
+              style={{ flexShrink: 0, border: '1px solid #e2e8f0', background: 'white', color: '#475569', borderRadius: '8px', padding: '10px 14px', fontSize: '12px', fontWeight: '700', cursor: 'pointer' }}>
+              Columns
+            </button>
+          )}
+
+          <button onClick={exportCSV}
+            style={{ flexShrink: 0, border: 'none', background: '#0f172a', color: 'white', borderRadius: '8px', padding: '10px 16px', fontSize: '12px', fontWeight: '800', cursor: 'pointer' }}>
+            Export
+          </button>
+        </div>
+
+        <div style={{ fontSize: '11.5px', color: '#94a3b8', marginTop: '10px' }}>
+          Showing <strong style={{ color: '#0f172a' }}>{visible.length}</strong> record{visible.length !== 1 ? 's' : ''} — {rangeLabel()}
+          {filterRep !== 'all' ? ' · ' + nameFor(filterRep) : ''}
+          . Export downloads exactly what you see here, as a spreadsheet.
+        </div>
+      </Card>
 
       {loading && <div style={{ color: '#888', fontSize: '13px' }}>Loading...</div>}
 
       {!loading && visible.length === 0 && (
         <Card style={{ padding: '32px', textAlign: 'center' }}>
-          <div style={{ fontWeight: '800', color: '#0f172a', marginBottom: '6px' }}>Nothing logged yet</div>
-          <div style={{ fontSize: '13px', color: '#888', marginBottom: '16px' }}>
-            When a rep logs a visit, it appears here instantly.
+          <div style={{ fontWeight: '800', color: '#0f172a', marginBottom: '6px' }}>
+            {permitted.length === 0 ? 'Nothing logged yet' : 'Nothing matches those filters'}
           </div>
-          <TealBtn onClick={openLogger}>+ Log Activity</TealBtn>
+          <div style={{ fontSize: '13px', color: '#888', marginBottom: '16px' }}>
+            {permitted.length === 0 ? 'When a rep logs a visit, it appears here instantly.' : 'Try a wider date range.'}
+          </div>
+          {permitted.length === 0 && <TealBtn onClick={openLogger}>+ Log Activity</TealBtn>}
         </Card>
       )}
 
-      <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
-        {visible.map(function (a) {
-          const vals = parseValues(a.values_json)
-          const reactions = reactionsByAct[a.id] || []
-          const comments = commentsByAct[a.id] || []
-          const viewers = viewersByAct[a.id] || []
-          const iReacted = !!myReaction(a.id)
-          const commentsOpen = !!openComments[a.id]
-
-          return (
-            <Card key={a.id} style={{ padding: '16px' }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '10px', flexWrap: 'wrap' }}>
-                <div style={{ minWidth: 0, flex: 1 }}>
-                  <div style={{ fontSize: '14.5px', fontWeight: '800', color: '#0f172a' }}>{a.rep_name}</div>
-                  {a.rep_title && <div style={{ fontSize: '11.5px', color: '#0f766e', fontWeight: '700' }}>{a.rep_title}</div>}
-                  <div style={{ fontSize: '11px', color: '#94a3b8', marginTop: '3px' }}>
-                    {timeAgo(a.created_at)} · {fmtStamp(a.created_at)}
-                    {terrName(a.territory_id) ? ' · ' + terrName(a.territory_id) : ''}
-                  </div>
-                </div>
-                {a.lat && a.lng && (
-                  <a href={'https://www.google.com/maps?q=' + a.lat + ',' + a.lng} target='_blank' rel='noreferrer'
-                    style={{ flexShrink: 0, fontSize: '11px', fontWeight: '700', color: '#0f766e', background: '#f0fdfa', border: '1px solid #ccfbf1', borderRadius: '20px', padding: '5px 11px', textDecoration: 'none' }}>
-                    View location
-                  </a>
-                )}
-              </div>
-
-              <div style={{ marginTop: '12px', background: '#f8fafc', borderRadius: '10px', padding: '12px' }}>
-                {Object.keys(vals).length === 0 && (
-                  <div style={{ fontSize: '12px', color: '#94a3b8' }}>No details entered.</div>
-                )}
-                {Object.keys(vals).map(function (fid) {
-                  const label = labelFor(fid)
-                  if (!label || !vals[fid]) return null
+      {view === 'table' && visible.length > 0 && (
+        <Card style={{ padding: '0', overflow: 'hidden' }}>
+          <div style={{ overflowX: 'auto' }}>
+            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '12.5px' }}>
+              <thead>
+                <tr style={{ background: '#f8fafc' }}>
+                  {shownColumns.map(function (c) {
+                    return (
+                      <th key={c.key} style={{ textAlign: 'left', padding: '12px 14px', fontSize: '10.5px', fontWeight: '800', color: '#64748b', textTransform: 'uppercase', letterSpacing: '0.04em', borderBottom: '1px solid #e2e8f0', whiteSpace: 'nowrap' }}>
+                        {c.label}
+                      </th>
+                    )
+                  })}
+                </tr>
+              </thead>
+              <tbody>
+                {visible.map(function (a, i) {
                   return (
-                    <div key={fid} style={{ marginBottom: '8px' }}>
-                      <div style={{ fontSize: '10px', fontWeight: '800', color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '0.04em' }}>{label}</div>
-                      <div style={{ fontSize: '13px', color: '#1e293b', marginTop: '2px', whiteSpace: 'pre-wrap' }}>{vals[fid]}</div>
-                    </div>
+                    <tr key={a.id} style={{ background: i % 2 === 0 ? 'white' : '#fcfdfe' }}>
+                      {shownColumns.map(function (c) {
+                        const val = cellValue(a, c)
+                        if (c.key === 'voice' && a.voice_url) {
+                          return (
+                            <td key={c.key} style={{ padding: '10px 14px', borderBottom: '1px solid #f1f5f9' }}>
+                              <audio src={a.voice_url} controls preload='none' style={{ height: '30px', maxWidth: '160px' }} />
+                            </td>
+                          )
+                        }
+                        if (c.key === 'location' && a.lat && a.lng) {
+                          return (
+                            <td key={c.key} style={{ padding: '10px 14px', borderBottom: '1px solid #f1f5f9', whiteSpace: 'nowrap' }}>
+                              <a href={'https://www.google.com/maps?q=' + a.lat + ',' + a.lng} target='_blank' rel='noreferrer'
+                                style={{ fontSize: '11.5px', fontWeight: '700', color: '#0f766e', textDecoration: 'none' }}>
+                                View map
+                              </a>
+                            </td>
+                          )
+                        }
+                        return (
+                          <td key={c.key} style={{ padding: '10px 14px', borderBottom: '1px solid #f1f5f9', color: '#1e293b', verticalAlign: 'top' }}>
+                            {val || <span style={{ color: '#cbd5e1' }}>—</span>}
+                          </td>
+                        )
+                      })}
+                    </tr>
                   )
                 })}
-              </div>
+              </tbody>
+            </table>
+          </div>
+        </Card>
+      )}
 
-              {a.voice_url && (
-                <div style={{ marginTop: '10px' }}>
-                  <div style={{ fontSize: '10px', fontWeight: '800', color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '0.04em', marginBottom: '5px' }}>Voice note</div>
-                  <audio src={a.voice_url} controls preload='none' style={{ width: '100%', height: '38px' }} />
+      {view === 'feed' && (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+          {visible.map(function (a) {
+            const vals = parseValues(a.values_json)
+            const reactions = reactionsByAct[a.id] || []
+            const comments = commentsByAct[a.id] || []
+            const viewers = viewersByAct[a.id] || []
+            const iReacted = !!myReaction(a.id)
+            const commentsOpen = !!openComments[a.id]
+
+            return (
+              <Card key={a.id} style={{ padding: '16px' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '10px', flexWrap: 'wrap' }}>
+                  <div style={{ minWidth: 0, flex: 1 }}>
+                    <div style={{ fontSize: '14.5px', fontWeight: '800', color: '#0f172a' }}>{a.rep_name}</div>
+                    {a.rep_title && <div style={{ fontSize: '11.5px', color: '#0f766e', fontWeight: '700' }}>{a.rep_title}</div>}
+                    <div style={{ fontSize: '11px', color: '#94a3b8', marginTop: '3px' }}>
+                      {timeAgo(a.created_at)} · {fmtStamp(a.created_at)}
+                      {terrName(a.territory_id) ? ' · ' + terrName(a.territory_id) : ''}
+                    </div>
+                  </div>
+                  {a.lat && a.lng && (
+                    <a href={'https://www.google.com/maps?q=' + a.lat + ',' + a.lng} target='_blank' rel='noreferrer'
+                      style={{ flexShrink: 0, fontSize: '11px', fontWeight: '700', color: '#0f766e', background: '#f0fdfa', border: '1px solid #ccfbf1', borderRadius: '20px', padding: '5px 11px', textDecoration: 'none' }}>
+                      View location
+                    </a>
+                  )}
                 </div>
-              )}
 
-              {viewers.length > 0 && (
-                <div style={{ fontSize: '11px', color: '#94a3b8', marginTop: '10px' }}>
-                  Seen by: {viewers.map(function (v) { return v.viewer_name }).join(', ')}
-                </div>
-              )}
-
-              <div style={{ display: 'flex', gap: '8px', alignItems: 'center', marginTop: '12px', paddingTop: '12px', borderTop: '1px solid #f1f5f9', flexWrap: 'wrap' }}>
-                <button onClick={function () { toggleReaction(a.id) }}
-                  style={{ display: 'flex', alignItems: 'center', gap: '6px', border: iReacted ? '1px solid #0f766e' : '1px solid #e2e8f0',
-                    background: iReacted ? '#f0fdfa' : 'white', color: iReacted ? '#0f766e' : '#64748b',
-                    borderRadius: '20px', padding: '6px 13px', fontSize: '12px', fontWeight: '700', cursor: 'pointer' }}>
-                  {iReacted ? 'Acknowledged' : 'Acknowledge'}
-                  {reactions.length > 0 ? ' · ' + reactions.length : ''}
-                </button>
-
-                <button onClick={function () {
-                  setOpenComments(function (prev) {
-                    const next = { ...prev }
-                    next[a.id] = !prev[a.id]
-                    return next
-                  })
-                }}
-                  style={{ border: '1px solid #e2e8f0', background: 'white', color: '#64748b', borderRadius: '20px', padding: '6px 13px', fontSize: '12px', fontWeight: '700', cursor: 'pointer' }}>
-                  Comment{comments.length > 0 ? ' · ' + comments.length : ''}
-                </button>
-              </div>
-
-              {reactions.length > 0 && (
-                <div style={{ fontSize: '11px', color: '#0f766e', marginTop: '8px', fontWeight: '600' }}>
-                  {reactions.map(function (r) { return r.actor_name }).join(', ')} acknowledged this
-                </div>
-              )}
-
-              {commentsOpen && (
-                <div style={{ marginTop: '12px' }}>
-                  {comments.map(function (c) {
+                <div style={{ marginTop: '12px', background: '#f8fafc', borderRadius: '10px', padding: '12px' }}>
+                  {Object.keys(vals).length === 0 && (
+                    <div style={{ fontSize: '12px', color: '#94a3b8' }}>No details entered.</div>
+                  )}
+                  {Object.keys(vals).map(function (fid) {
+                    const label = labelFor(fid)
+                    if (!label || !vals[fid]) return null
                     return (
-                      <div key={c.id} style={{ background: '#f8fafc', borderRadius: '10px', padding: '10px 12px', marginBottom: '6px' }}>
-                        <div style={{ display: 'flex', justifyContent: 'space-between', gap: '8px' }}>
-                          <span style={{ fontSize: '12px', fontWeight: '800', color: '#0f172a' }}>
-                            {c.actor_name}{c.actor_title ? ' · ' + c.actor_title : ''}
-                          </span>
-                          <span style={{ fontSize: '10px', color: '#94a3b8', flexShrink: 0 }}>{timeAgo(c.created_at)}</span>
-                        </div>
-                        <div style={{ fontSize: '13px', color: '#334155', marginTop: '3px', lineHeight: '1.5' }}>{c.body}</div>
+                      <div key={fid} style={{ marginBottom: '8px' }}>
+                        <div style={{ fontSize: '10px', fontWeight: '800', color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '0.04em' }}>{label}</div>
+                        <div style={{ fontSize: '13px', color: '#1e293b', marginTop: '2px', whiteSpace: 'pre-wrap' }}>{vals[fid]}</div>
                       </div>
                     )
                   })}
-
-                  <div style={{ display: 'flex', gap: '8px', marginTop: '8px' }}>
-                    <input value={commentDrafts[a.id] || ''}
-                      onChange={function (e) {
-                        const v = e.target.value
-                        setCommentDrafts(function (prev) {
-                          const next = { ...prev }
-                          next[a.id] = v
-                          return next
-                        })
-                      }}
-                      onKeyDown={function (e) { if (e.key === 'Enter') postComment(a.id) }}
-                      placeholder='Reply to the rep...'
-                      style={{ flex: 1, padding: '10px 12px', borderRadius: '20px', border: '1px solid #e2e8f0', fontSize: '13px', outline: 'none' }} />
-                    <button onClick={function () { postComment(a.id) }}
-                      style={{ flexShrink: 0, background: '#0f766e', color: 'white', border: 'none', borderRadius: '20px', padding: '10px 16px', fontSize: '12px', fontWeight: '800', cursor: 'pointer' }}>
-                      Send
-                    </button>
-                  </div>
                 </div>
-              )}
-            </Card>
-          )
-        })}
-      </div>
+
+                {a.voice_url && (
+                  <div style={{ marginTop: '10px' }}>
+                    <div style={{ fontSize: '10px', fontWeight: '800', color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '0.04em', marginBottom: '5px' }}>Voice note</div>
+                    <audio src={a.voice_url} controls preload='none' style={{ width: '100%', height: '38px' }} />
+                  </div>
+                )}
+
+                {viewers.length > 0 && (
+                  <div style={{ fontSize: '11px', color: '#94a3b8', marginTop: '10px' }}>
+                    Seen by: {viewers.map(function (v) { return v.viewer_name }).join(', ')}
+                  </div>
+                )}
+
+                <div style={{ display: 'flex', gap: '8px', alignItems: 'center', marginTop: '12px', paddingTop: '12px', borderTop: '1px solid #f1f5f9', flexWrap: 'wrap' }}>
+                  <button onClick={function () { toggleReaction(a.id) }}
+                    style={{ display: 'flex', alignItems: 'center', gap: '6px', border: iReacted ? '1px solid #0f766e' : '1px solid #e2e8f0',
+                      background: iReacted ? '#f0fdfa' : 'white', color: iReacted ? '#0f766e' : '#64748b',
+                      borderRadius: '20px', padding: '6px 13px', fontSize: '12px', fontWeight: '700', cursor: 'pointer' }}>
+                    {iReacted ? 'Acknowledged' : 'Acknowledge'}
+                    {reactions.length > 0 ? ' · ' + reactions.length : ''}
+                  </button>
+
+                  <button onClick={function () {
+                    setOpenComments(function (prev) {
+                      const next = { ...prev }
+                      next[a.id] = !prev[a.id]
+                      return next
+                    })
+                  }}
+                    style={{ border: '1px solid #e2e8f0', background: 'white', color: '#64748b', borderRadius: '20px', padding: '6px 13px', fontSize: '12px', fontWeight: '700', cursor: 'pointer' }}>
+                    Comment{comments.length > 0 ? ' · ' + comments.length : ''}
+                  </button>
+                </div>
+
+                {reactions.length > 0 && (
+                  <div style={{ fontSize: '11px', color: '#0f766e', marginTop: '8px', fontWeight: '600' }}>
+                    {reactions.map(function (r) { return r.actor_name }).join(', ')} acknowledged this
+                  </div>
+                )}
+
+                {commentsOpen && (
+                  <div style={{ marginTop: '12px' }}>
+                    {comments.map(function (c) {
+                      return (
+                        <div key={c.id} style={{ background: '#f8fafc', borderRadius: '10px', padding: '10px 12px', marginBottom: '6px' }}>
+                          <div style={{ display: 'flex', justifyContent: 'space-between', gap: '8px' }}>
+                            <span style={{ fontSize: '12px', fontWeight: '800', color: '#0f172a' }}>
+                              {c.actor_name}{c.actor_title ? ' · ' + c.actor_title : ''}
+                            </span>
+                            <span style={{ fontSize: '10px', color: '#94a3b8', flexShrink: 0 }}>{timeAgo(c.created_at)}</span>
+                          </div>
+                          <div style={{ fontSize: '13px', color: '#334155', marginTop: '3px', lineHeight: '1.5' }}>{c.body}</div>
+                        </div>
+                      )
+                    })}
+
+                    <div style={{ display: 'flex', gap: '8px', marginTop: '8px' }}>
+                      <input value={commentDrafts[a.id] || ''}
+                        onChange={function (e) {
+                          const v = e.target.value
+                          setCommentDrafts(function (prev) {
+                            const next = { ...prev }
+                            next[a.id] = v
+                            return next
+                          })
+                        }}
+                        onKeyDown={function (e) { if (e.key === 'Enter') postComment(a.id) }}
+                        placeholder='Reply to the rep...'
+                        style={{ flex: 1, padding: '10px 12px', borderRadius: '20px', border: '1px solid #e2e8f0', fontSize: '13px', outline: 'none' }} />
+                      <button onClick={function () { postComment(a.id) }}
+                        style={{ flexShrink: 0, background: '#0f766e', color: 'white', border: 'none', borderRadius: '20px', padding: '10px 16px', fontSize: '12px', fontWeight: '800', cursor: 'pointer' }}>
+                        Send
+                      </button>
+                    </div>
+                  </div>
+                )}
+              </Card>
+            )
+          })}
+        </div>
+      )}
+
+      {pickingCols && (
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(15,23,42,0.55)', display: 'flex', alignItems: 'flex-end', justifyContent: 'center', zIndex: 50 }}>
+          <div style={{ background: 'white', width: '100%', maxWidth: '540px', maxHeight: '85vh', overflowY: 'auto', borderRadius: '16px 16px 0 0', padding: '20px' }}>
+            <div style={{ fontSize: '16px', fontWeight: '900', color: '#0f172a', marginBottom: '4px' }}>Columns</div>
+            <div style={{ fontSize: '11.5px', color: '#888', marginBottom: '16px' }}>
+              Tick what you want to see. The export matches exactly this.
+            </div>
+
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+              {columns.map(function (c) {
+                const on = !hiddenCols[c.key]
+                return (
+                  <button key={c.key} onClick={function () { toggleCol(c.key) }}
+                    style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '12px 14px', borderRadius: '10px', cursor: 'pointer', textAlign: 'left',
+                      border: on ? '1px solid #0f766e' : '1px solid #e2e8f0',
+                      background: on ? '#f0fdfa' : 'white' }}>
+                    <span style={{ fontSize: '13px', fontWeight: '700', color: '#0f172a' }}>{c.label}</span>
+                    <span style={{ fontSize: '11.5px', fontWeight: '800', color: on ? '#0f766e' : '#cbd5e1' }}>
+                      {on ? 'Shown' : 'Hidden'}
+                    </span>
+                  </button>
+                )
+              })}
+            </div>
+
+            <div style={{ marginTop: '20px' }}>
+              <GhostBtn onClick={function () { setPickingCols(false) }} style={{ width: '100%', padding: '13px' }}>Done</GhostBtn>
+            </div>
+          </div>
+        </div>
+      )}
 
       {logging && (
         <div style={{ position: 'fixed', inset: 0, background: 'rgba(15,23,42,0.55)', display: 'flex', alignItems: 'flex-end', justifyContent: 'center', zIndex: 50 }}>
