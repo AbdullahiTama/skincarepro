@@ -2,6 +2,7 @@ import { useNavigate, useLocation } from 'react-router-dom'
 import { useAuth } from '../../App'
 import { getNavItems } from '../../lib/permissions'
 import { businessIcon, businessName, DARK, TEAL, TEALC } from '../../lib/utils'
+import NotificationBell from './NotificationBell'
 
 export default function Sidebar({ brand, role }) {
   const navigate = useNavigate()
@@ -32,6 +33,10 @@ export default function Sidebar({ brand, role }) {
 
       {/* Nav items */}
       <nav style={{ flex: 1, padding: '8px' }}>
+        <div style={{ marginBottom: '6px' }}>
+          <NotificationBell brand={brand} />
+        </div>
+
         {navItems.map(([id, icon, label]) => {
           const active = current === id || (id === 'dashboard' && current === 'dashboard')
           return (
