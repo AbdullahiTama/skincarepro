@@ -667,6 +667,23 @@ function ProductModal({ product, perms, onSave, onClose }) {
           </div>
         )}
         {!canEditPrice && <div style={{ padding: '8px 12px', borderRadius: '8px', background: '#fffbeb', fontSize: '12px', color: '#d97706' }}>⚠️ Only the Owner can edit prices</div>}
+        <div>
+          <Inp label='Sold per (unit)' value={form.sales_unit} onChange={v => f('sales_unit', v)} placeholder='e.g. Carton, Box, Pack, Card, Tablet' />
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', marginTop: '8px' }}>
+            {['Carton', 'Box', 'Pack', 'Card', 'Tablet', 'Piece', 'Bottle', 'Sachet'].map(u => (
+              <button key={u} type='button' onClick={() => f('sales_unit', u)}
+                style={{ fontSize: '11px', fontWeight: '700', padding: '6px 11px', borderRadius: '20px', cursor: 'pointer',
+                  border: form.sales_unit === u ? '1px solid #0f766e' : '1px solid #e5e7eb',
+                  background: form.sales_unit === u ? '#0f766e' : 'white',
+                  color: form.sales_unit === u ? 'white' : '#666' }}>
+                {u}
+              </button>
+            ))}
+          </div>
+          <div style={{ fontSize: '11px', color: '#94a3b8', marginTop: '6px' }}>
+            The price above is the price for one {form.sales_unit ? form.sales_unit.toLowerCase() : 'unit'}. Leave blank to sell as single units.
+          </div>
+        </div>
         {form.cat !== 'Services' && (
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
             <Inp label='Stock Quantity' value={form.stock} onChange={v => f('stock', v)} type='number' placeholder='0' readOnly={!perms?.canEditStock} />
