@@ -28,6 +28,7 @@ import Messages from './Messages'
 import Stock from './Stock'
 import Orders from './Orders'
 import LiveActivity from './LiveActivity'
+import WarehousePOS from './WarehousePOS'
 import Reception from './hospital/Reception'
 import Triage from './hospital/Triage'
 import Doctor from './hospital/Doctor'
@@ -130,6 +131,7 @@ export default function BusinessDashboard() {
             <Route path='stock' element={<Stock {...pageProps} />} />
             <Route path='orders' element={<Orders {...pageProps} />} />
             <Route path='activity' element={<LiveActivity {...pageProps} />} />
+            <Route path='warehouse_pos' element={<WarehousePOS {...pageProps} />} />
             <Route path='reception' element={<><TopBar title='Reception' brand={brand} role={role} /><div style={{ padding: '24px' }}><Reception {...pageProps} /></div></>} />
             <Route path='triage' element={<><TopBar title='Triage' brand={brand} role={role} /><div style={{ padding: '24px' }}><Triage {...pageProps} /></div></>} />
             <Route path='doctor' element={<><TopBar title='Doctor Consultation' brand={brand} role={role} /><div style={{ padding: '24px' }}><Doctor {...pageProps} /></div></>} />
