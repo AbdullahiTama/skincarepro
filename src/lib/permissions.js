@@ -122,7 +122,7 @@ export const ROLES = {
 // (Manufacturer/Importer and Wholesale let companies type their own role names,
 // so "Regional Manager", "Business Development Manager" etc won't be in the list above).
 export const DEFAULT_STAFF_PERMS = {
-  nav: ['dashboard', 'warehouses', 'territories', 'messages', 'stock', 'orders', 'warehouse_pos', 'activity', 'reports', 'carefind'],
+  nav: ['dashboard', 'warehouses', 'territories', 'messages', 'stock', 'orders', 'warehouse_pos', 'inventory', 'activity', 'reports', 'carefind'],
   canEditPrice: false,
   canEditStock: false,
   canDelete: false,
@@ -185,6 +185,7 @@ export const ALL_NAV_HOSPITAL = [
 export const ALL_NAV_ENTERPRISE = [
   ['dashboard', '🏠', 'Dashboard'],
   ['warehouse_pos', '🛒', 'Walk-in POS'],
+  ['inventory', '📦', 'Inventory & Pricing'],
   ['activity', '📡', 'Live Field Activity'],
   ['orders', '📄', 'Orders & LPO'],
   ['warehouses', '🏭', 'Warehouses & Branches'],
