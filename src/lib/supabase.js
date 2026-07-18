@@ -540,28 +540,73 @@ export async function getActivityComments(activityIds) {
   return sbFetch('activity_comments?activity_id=in.(' + activityIds.join(',') + ')&order=created_at.asc&select=*')
 }
 
-// Turns GPS coordinates into a readable place name.
-// Uses OpenStreetMap's free service — no key, no cost.
+// Turns GPS coordinates into the best available place name.
+// First it asks OpenStreetMap for NAMED places very close to the point
+// (hospital, pharmacy, shop, clinic...) — this catches a business even when
+// the rep is standing at its gate. If nothing named is nearby, it falls back
+// to the plain reverse-geocode (street/area). Free, no key. Returns null on
+// failure so the activity still saves.
 export async function reverseGeocode(lat, lng) {
+  // 1) Look for a named place within roughly ~60m of the rep.
+  try {
+    const d = 0.0006 // ~60-70 metres box
+    const left = lng - d, right = lng + d, top = lat + d, bottom = lat - d
+    const q = '[out:json][timeout:8];(' +
+      'node["name"]["amenity"~"hospital|clinic|pharmacy|doctors|dentist"](' + bottom + ',' + left + ',' + top + ',' + right + ');' +
+      'node["name"]["healthcare"](' + bottom + ',' + left + ',' + top + ',' + right + ');' +
+      'node["name"]["shop"~"chemist|pharmacy|medical_supply"](' + bottom + ',' + left + ',' + top + ',' + right + ');' +
+      'node["name"]["shop"](' + bottom + ',' + left + ',' + top + ',' + right + ');' +
+      ');out body 20;'
+    const res = await fetch('https://overpass-api.de/api/interpreter', {
+      method: 'POST',
+      headers: { 'Content-Type': 'text/plain' },
+      body: q,
+    })
+    if (res.ok) {
+      const data = await res.json()
+      const els = (data && data.elements) ? data.elements : []
+      if (els.length > 0) {
+        let best = null
+        let bestDist = Infinity
+        for (let i = 0; i < els.length; i++) {
+          const e = els[i]
+          if (!e.tags || !e.tags.name) continue
+          const dlat = (e.lat - lat)
+          const dlng = (e.lon - lng)
+          const dist = dlat * dlat + dlng * dlng
+          if (dist < bestDist) { bestDist = dist; best = e }
+        }
+        if (best && best.tags && best.tags.name) {
+          const name = best.tags.name
+          const area = await areaLabel(lat, lng)
+          return area ? (name + ', ' + area) : name
+        }
+      }
+    }
+  } catch (e) {
+    // fall through to plain reverse-geocode
+  }
+
+  const area = await areaLabel(lat, lng)
+  return area || null
+}
+
+// Helper: plain reverse-geocode giving a street/area/city string.
+async function areaLabel(lat, lng) {
   try {
     const url = 'https://nominatim.openstreetmap.org/reverse?format=json&lat=' + lat + '&lon=' + lng + '&zoom=18&addressdetails=1'
     const res = await fetch(url, { headers: { 'Accept': 'application/json' } })
     if (!res.ok) return null
     const data = await res.json()
     if (!data) return null
-
     const a = data.address || {}
     const parts = []
-    if (a.amenity) parts.push(a.amenity)
-    else if (a.building) parts.push(a.building)
-    else if (a.shop) parts.push(a.shop)
     if (a.road) parts.push(a.road)
     if (a.suburb) parts.push(a.suburb)
     else if (a.neighbourhood) parts.push(a.neighbourhood)
     if (a.city) parts.push(a.city)
     else if (a.town) parts.push(a.town)
     else if (a.state) parts.push(a.state)
-
     if (parts.length > 0) return parts.join(', ')
     if (data.display_name) return data.display_name
     return null
