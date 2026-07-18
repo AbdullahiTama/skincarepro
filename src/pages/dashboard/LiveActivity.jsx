@@ -954,16 +954,17 @@ export default function LiveActivity({ brand, showToast }) {
           <div style={{ background: 'white', width: '100%', maxWidth: '600px', maxHeight: '92vh', overflowY: 'auto', borderRadius: '16px 16px 0 0', padding: '20px' }}>
             <div style={{ fontSize: '16px', fontWeight: '900', color: '#0f172a', marginBottom: '6px' }}>Log Activity</div>
 
-            <div style={{ padding: '10px 12px', borderRadius: '8px', background: placeName ? '#f0fdfa' : '#f8fafc', border: '1px solid ' + (placeName ? '#ccfbf1' : '#e2e8f0'), marginBottom: '16px' }}>
-              <div style={{ fontSize: '10px', fontWeight: '800', color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '0.04em' }}>Location</div>
-              <div style={{ fontSize: '12.5px', color: placeName ? '#0f766e' : '#94a3b8', fontWeight: placeName ? '700' : '500', marginTop: '2px' }}>
-                {placeName
-                  ? placeName
-                  : findingPlace
-                    ? 'Finding where you are...'
-                    : gps
-                      ? 'Coordinates captured'
-                      : 'Location not available'}
+            <div style={{ padding: '12px', borderRadius: '10px', background: '#f8fafc', border: '1px solid #e2e8f0', marginBottom: '16px' }}>
+              <div style={{ fontSize: '10px', fontWeight: '800', color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '0.04em', marginBottom: '6px' }}>Where are you?</div>
+              <input value={placeName} onChange={function (e) { setPlaceName(e.target.value) }}
+                placeholder={findingPlace ? 'Finding where you are...' : 'Type the hospital, pharmacy or place name'}
+                style={{ width: '100%', padding: '11px 12px', borderRadius: '10px', border: '1px solid #e2e8f0', fontSize: '13px', boxSizing: 'border-box', fontWeight: '600', color: '#0f172a' }} />
+              <div style={{ fontSize: '11px', color: '#94a3b8', marginTop: '6px' }}>
+                {findingPlace
+                  ? 'Looking up your location — you can type over it any time.'
+                  : gps
+                    ? 'We guessed from your GPS. Correct it if it is wrong — what you type is what gets saved.'
+                    : 'Location not picked up. Type where you are.'}
               </div>
             </div>
 
