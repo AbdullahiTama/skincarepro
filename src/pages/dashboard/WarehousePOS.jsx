@@ -622,6 +622,7 @@ export default function WarehousePOS({ brand, products, setProducts, role, perms
                   {(p.generic_name || p.genericName) && <div style={{ fontSize: '9px', color: '#bbb', marginBottom: '4px' }}>{p.generic_name || p.genericName}</div>}
                   <div style={{ fontSize: '13px', fontWeight: '900', color: TEALC }}>{fmt(p.price)}</div>
                   <div style={{ fontSize: '9px', color: '#0f766e', fontWeight: '700', marginTop: '1px' }}>per {u}</div>
+                  {p.shelf && <div style={{ fontSize: '9px', color: '#64748b', fontWeight: '700', marginTop: '2px' }}>📍 {p.shelf}</div>}
                   {(p.cat || p.category) !== 'Services' && <div style={{ fontSize: '9px', color: out ? '#ef4444' : '#bbb', marginTop: '2px' }}>{out ? 'Out of stock' : p.stock + ' ' + unitPlural(u, p.stock) + ' left'}</div>}
                 </button>
               )
