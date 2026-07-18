@@ -591,7 +591,7 @@ export async function reverseGeocode(lat, lng) {
   return area || null
 }
 
-// Helper: plain reverse-geocode giving a street/area/city string.
+// Helper: plain reverse-geocode giving the most specific address it can.
 async function areaLabel(lat, lng) {
   try {
     const url = 'https://nominatim.openstreetmap.org/reverse?format=json&lat=' + lat + '&lon=' + lng + '&zoom=18&addressdetails=1'
@@ -601,15 +601,22 @@ async function areaLabel(lat, lng) {
     if (!data) return null
     const a = data.address || {}
     const parts = []
+    if (a.amenity) parts.push(a.amenity)
+    else if (a.building) parts.push(a.building)
+    else if (a.shop) parts.push(a.shop)
+    else if (a.office) parts.push(a.office)
+    if (a.house_number) parts.push(a.house_number)
     if (a.road) parts.push(a.road)
     if (a.suburb) parts.push(a.suburb)
     else if (a.neighbourhood) parts.push(a.neighbourhood)
+    else if (a.village) parts.push(a.village)
     if (a.city) parts.push(a.city)
     else if (a.town) parts.push(a.town)
-    else if (a.state) parts.push(a.state)
+    else if (a.county) parts.push(a.county)
+    // Only a state (or nothing useful)? Use the full address line instead.
+    if (parts.length <= 1 && data.display_name) return data.display_name
     if (parts.length > 0) return parts.join(', ')
-    if (data.display_name) return data.display_name
-    return null
+    return data.display_name || null
   } catch (e) {
     return null
   }
