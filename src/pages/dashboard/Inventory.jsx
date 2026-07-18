@@ -396,7 +396,10 @@ export default function Inventory({ brand, products, setProducts, role, perms, l
                       <td style={{ padding: '12px 14px' }}>
                         <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                           <span style={{ fontSize: '18px' }}>{p.emoji || '📦'}</span>
-                          <span style={{ fontWeight: '700', fontSize: '13px' }}>{p.name}</span>
+                          <div>
+                            <div style={{ fontWeight: '700', fontSize: '13px' }}>{p.name}</div>
+                            {p.shelf && <div style={{ fontSize: '11px', color: '#0f766e', fontWeight: '700', marginTop: '2px' }}>📍 {p.shelf}</div>}
+                          </div>
                         </div>
                       </td>
                       <td style={{ padding: '12px 14px', fontSize: '12px', color: '#888' }}>{p.generic_name || p.genericName || '—'}</td>
@@ -684,6 +687,14 @@ function ProductModal({ product, perms, onSave, onClose }) {
             The price above is the price for one {form.sales_unit ? form.sales_unit.toLowerCase() : 'unit'}. Leave blank to sell as single units.
           </div>
         </div>
+        {form.cat !== 'Services' && (
+          <div>
+            <Inp label='Shelf / Storage Location' value={form.shelf} onChange={v => f('shelf', v)} placeholder='e.g. Shelf A3, Rack 12, Cold Room, Aisle 2 Bay 4' />
+            <div style={{ fontSize: '11px', color: '#94a3b8', marginTop: '6px' }}>
+              Where this product physically sits, so staff can find it fast.
+            </div>
+          </div>
+        )}
         {form.cat !== 'Services' && (
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
             <Inp label='Stock Quantity' value={form.stock} onChange={v => f('stock', v)} type='number' placeholder='0' readOnly={!perms?.canEditStock} />
