@@ -72,15 +72,18 @@ export default function POS({ brand, products, setProducts, role, perms }) {
   const splitTotal = method === 'Split' ? Object.values(splitAmounts).reduce((s, v) => s + (parseFloat(v) || 0), 0) : 0
 
   async function saveSale(saleData) {
-    try {
-      if (navigator.onLine) {
-        await addSale({ ...saleData, business_id: brand.id })
-      } else {
-        queueOfflineSale({ ...saleData, business_id: brand.id })
-        showToast('Sale saved offline — will sync when connected')
-      }
-    } catch (e) {
+    if (!navigator.onLine) {
       queueOfflineSale({ ...saleData, business_id: brand.id })
+      showToast('Sale saved offline — will sync when connected')
+      return
+    }
+    try {
+      await addSale({ ...saleData, business_id: brand.id })
+    } catch (e) {
+      // Queue it so the money is never lost, but say so plainly. Silently
+      // queueing while online made sales look recorded when they were not.
+      queueOfflineSale({ ...saleData, business_id: brand.id })
+      alert('This sale could NOT be saved to the database:\n\n' + (e.message || 'Unknown error') + '\n\nIt has been queued on this device and will retry, but tell your administrator.')
     }
   }
 
