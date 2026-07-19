@@ -112,6 +112,13 @@ export default function Inventory({ brand, products, setProducts, role, perms, l
         cost_price: parseFloat(data.cost_price) || 0,
         stock: category === 'Services' ? 999 : parseInt(data.stock) || 0,
         reorder_level: parseInt(data.reorder_level) || 5,
+        // Blank optional fields must be null. An empty string sent to a
+        // numeric column makes Postgres reject the whole insert.
+        min_purchase: (data.min_purchase === '' || data.min_purchase == null) ? null : (parseInt(data.min_purchase) || null),
+        sale_type: data.sale_type || null,
+        shelf: data.shelf || null,
+        sales_unit: data.sales_unit || null,
+        price_unit: data.price_unit || data.sales_unit || null,
       }
 
       if (!isEdit) {
@@ -121,6 +128,10 @@ export default function Inventory({ brand, products, setProducts, role, perms, l
         if (name.length > 3) {
           const dupe = findDuplicate(products, name, generic, null)
           if (dupe) {
+            // Close the add form first — otherwise the warning opens behind it
+            // and it looks like the save silently did nothing.
+            setShowAdd(false)
+            setEditItem(null)
             setDuplicateWarning({ existing: dupe, incoming: productData })
             return
           }
@@ -137,7 +148,22 @@ export default function Inventory({ brand, products, setProducts, role, perms, l
       await reload()
     } catch (e) {
       console.error('saveProduct error:', e)
-      showToast('Error: ' + (e.message || 'Could not save product. Please try again.'))
+      alert('Could not save product:\n\n' + (e.message || 'Unknown error'))
+    }
+  }
+
+  // The name looked similar but it really is a different product — save it as new.
+  async function addNewAnyway() {
+    if (!duplicateWarning) return
+    try {
+      await addProduct({ ...duplicateWarning.incoming, business_id: brand.id })
+      showToast('Product added! \u2705')
+      setDuplicateWarning(null)
+      setShowAdd(false)
+      setEditItem(null)
+      await reload()
+    } catch (e) {
+      alert('Could not save product:\n\n' + (e.message || 'Unknown error'))
     }
   }
 
@@ -160,7 +186,7 @@ export default function Inventory({ brand, products, setProducts, role, perms, l
       setShowAdd(false)
       setEditItem(null)
       await reload()
-    } catch (e) { showToast('Error updating product') }
+    } catch (e) { alert('Could not update product:\n\n' + (e.message || 'Unknown error')) }
   }
 
   // Merge ALL detected duplicate groups in one go — batched version:
@@ -618,9 +644,13 @@ export default function Inventory({ brand, products, setProducts, role, perms, l
               Updating will combine stock ({duplicateWarning.existing.stock} + {duplicateWarning.incoming.stock} = {(duplicateWarning.existing.stock || 0) + (duplicateWarning.incoming.stock || 0)} units) and apply the new price you entered.
             </div>
 
-            <div style={{ display: 'flex', gap: '10px' }}>
-              <GhostBtn onClick={() => setDuplicateWarning(null)} style={{ flex: 1, padding: '12px' }}>Cancel</GhostBtn>
-              <TealBtn onClick={updateExistingFromDuplicate} style={{ flex: 1, padding: '12px' }}>Update Existing Product</TealBtn>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+              <TealBtn onClick={updateExistingFromDuplicate} style={{ width: '100%', padding: '12px' }}>Update Existing Product</TealBtn>
+              <button onClick={addNewAnyway}
+                style={{ width: '100%', padding: '12px', borderRadius: '10px', border: '1px solid #0f766e', background: 'white', color: '#0f766e', fontSize: '13px', fontWeight: '800', cursor: 'pointer' }}>
+                No — add it as a separate product
+              </button>
+              <GhostBtn onClick={() => setDuplicateWarning(null)} style={{ width: '100%', padding: '12px' }}>Cancel</GhostBtn>
             </div>
           </div>
         )}
