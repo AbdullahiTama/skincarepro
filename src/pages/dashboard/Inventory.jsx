@@ -671,10 +671,10 @@ function ProductModal({ product, perms, onSave, onClose }) {
         )}
         {!canEditPrice && <div style={{ padding: '8px 12px', borderRadius: '8px', background: '#fffbeb', fontSize: '12px', color: '#d97706' }}>⚠️ Only the Owner can edit prices</div>}
         <div>
-          <Inp label='Sold per (unit)' value={form.sales_unit} onChange={v => f('sales_unit', v)} placeholder='e.g. Carton, Box, Pack, Card, Tablet' />
+          <Inp label='Sold per (unit)' value={form.sales_unit} onChange={v => { f('sales_unit', v); f('price_unit', v) }} placeholder='e.g. Carton, Box, Pack, Card, Tablet' />
           <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', marginTop: '8px' }}>
             {['Carton', 'Box', 'Pack', 'Card', 'Tablet', 'Piece', 'Bottle', 'Sachet'].map(u => (
-              <button key={u} type='button' onClick={() => f('sales_unit', u)}
+              <button key={u} type='button' onClick={() => { f('sales_unit', u); f('price_unit', u) }}
                 style={{ fontSize: '11px', fontWeight: '700', padding: '6px 11px', borderRadius: '20px', cursor: 'pointer',
                   border: form.sales_unit === u ? '1px solid #0f766e' : '1px solid #e5e7eb',
                   background: form.sales_unit === u ? '#0f766e' : 'white',
@@ -687,6 +687,25 @@ function ProductModal({ product, perms, onSave, onClose }) {
             The price above is the price for one {form.sales_unit ? form.sales_unit.toLowerCase() : 'unit'}. Leave blank to sell as single units.
           </div>
         </div>
+        <div>
+          <div style={{ fontSize: '13px', fontWeight: '700', color: '#374151', marginBottom: '6px' }}>How do you sell this?</div>
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
+            {['retail', 'wholesale', 'distributor', 'importer', 'manufacturer'].map(t => (
+              <button key={t} type='button' onClick={() => f('sale_type', form.sale_type === t ? '' : t)}
+                style={{ fontSize: '11px', fontWeight: '700', padding: '7px 12px', borderRadius: '20px', cursor: 'pointer', textTransform: 'capitalize',
+                  border: form.sale_type === t ? '1px solid #0f766e' : '1px solid #e5e7eb',
+                  background: form.sale_type === t ? '#0f766e' : 'white',
+                  color: form.sale_type === t ? 'white' : '#666' }}>
+                {t}
+              </button>
+            ))}
+          </div>
+          <div style={{ fontSize: '11px', color: '#94a3b8', marginTop: '6px' }}>
+            Shows as a label on CareFind so buyers know what kind of seller you are. Tap again to clear.
+          </div>
+        </div>
+        <Inp label='Minimum order' value={form.min_purchase} onChange={v => f('min_purchase', v)} type='number'
+          placeholder='Leave blank if there is no minimum' />
         {form.cat !== 'Services' && (
           <div>
             <Inp label='Shelf / Storage Location' value={form.shelf} onChange={v => f('shelf', v)} placeholder='e.g. Shelf A3, Rack 12, Cold Room, Aisle 2 Bay 4' />
