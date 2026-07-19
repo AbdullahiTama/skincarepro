@@ -67,6 +67,7 @@ export default function Inventory({ brand, products, setProducts, role, perms, l
   const [showRestock, setShowRestock] = useState(null)
   const [showUpload, setShowUpload] = useState(false)
   const [uploadData, setUploadData] = useState([])
+  const [importing, setImporting] = useState('')
   const [uploadError, setUploadError] = useState('')
   const [scanning, setScanning] = useState(false)
   const [duplicateWarning, setDuplicateWarning] = useState(null)
@@ -307,6 +308,80 @@ export default function Inventory({ brand, products, setProducts, role, perms, l
     reader.readAsText(file); e.target.value = ''
   }
 
+  // Sends products to the database in batches instead of one request per row.
+  // 769 products was 769 round-trips on a phone connection — it stalled after a
+  // handful and every failure went to a console nobody can see on mobile.
+  async function runImport() {
+    if (!uploadData.length) return
+
+    // Skip anything already in the catalogue, matched on name.
+    const existing = new Set(products.map(p => (p.name || '').trim().toLowerCase()))
+    const seen = new Set()
+    const rows = []
+    let skipped = 0
+
+    for (const p of uploadData) {
+      const key = (p.name || '').trim().toLowerCase()
+      if (!key) continue
+      if (existing.has(key) || seen.has(key)) { skipped++; continue }
+      seen.add(key)
+      rows.push({
+        name: p.name,
+        generic_name: p.generic_name || '',
+        category: p.category || p.cat || 'Medicines',
+        price: parseFloat(p.price) || 0,
+        cost_price: parseFloat(p.cost_price) || 0,
+        stock: parseInt(p.stock) || 0,
+        reorder_level: parseInt(p.reorder_level) || 5,
+        barcode: p.barcode || '',
+        list_on_carefind: p.list_on_carefind !== false,
+        emoji: '\uD83D\uDC8A',
+        business_id: brand.id,
+      })
+    }
+
+    if (!rows.length) {
+      alert('Nothing to import — all ' + skipped + ' product(s) are already in your inventory.')
+      return
+    }
+
+    const BATCH = 100
+    let added = 0
+    const failures = []
+
+    for (let i = 0; i < rows.length; i += BATCH) {
+      const batch = rows.slice(i, i + BATCH)
+      setImporting('Importing ' + Math.min(i + batch.length, rows.length) + ' of ' + rows.length + '...')
+      try {
+        await addProduct(batch)
+        added += batch.length
+      } catch (e) {
+        // One bad row rejects its whole batch, so retry it row by row to save the good ones.
+        for (const row of batch) {
+          try {
+            await addProduct(row)
+            added++
+          } catch (rowErr) {
+            failures.push(row.name + ' — ' + (rowErr.message || 'rejected'))
+          }
+        }
+      }
+    }
+
+    setImporting('')
+    await reload()
+    setUploadData([])
+    setShowUpload(false)
+
+    let msg = added + ' of ' + rows.length + ' products imported.'
+    if (skipped > 0) msg += '\n' + skipped + ' skipped (already in your inventory).'
+    if (failures.length > 0) {
+      msg += '\n\n' + failures.length + ' could not be saved:\n' + failures.slice(0, 5).join('\n')
+      if (failures.length > 5) msg += '\n...and ' + (failures.length - 5) + ' more.'
+    }
+    alert(msg)
+  }
+
   async function confirmUpload() {
     let count = 0
     for (const p of uploadData) {
@@ -526,45 +601,9 @@ export default function Inventory({ brand, products, setProducts, role, perms, l
           <div style={{ display: 'flex', gap: '10px' }}>
             <GhostBtn onClick={downloadTemplate} style={{ flex: 1, padding: '12px' }}>📥 Download Template</GhostBtn>
             {uploadData.length > 0 && (
-              <button onClick={async () => {
-                showToast('Importing ' + uploadData.length + ' products...')
-                let added = 0
-                let skipped = 0
-                const skippedNames = []
-                for (const p of uploadData) {
-                  const dupe = findDuplicate(products, p.name, p.generic_name)
-                  if (dupe) {
-                    skipped++
-                    skippedNames.push(p.name)
-                    continue
-                  }
-                  try {
-                    await addProduct({
-                      name: p.name,
-                      generic_name: p.generic_name || '',
-                      category: p.category || 'Medicines',
-                      price: parseFloat(p.price) || 0,
-                      cost_price: parseFloat(p.cost_price) || 0,
-                      stock: parseInt(p.stock) || 0,
-                      reorder_level: parseInt(p.reorder_level) || 5,
-                      barcode: p.barcode || '',
-                      list_on_carefind: p.list_on_carefind !== false,
-                      emoji: '💊',
-                      business_id: brand.id,
-                    })
-                    added++
-                  } catch (e) { console.error('Error adding product:', p.name, e) }
-                }
-                await reload()
-                if (skipped > 0) {
-                  showToast(added + ' added · ' + skipped + ' skipped (already exist): ' + skippedNames.slice(0, 3).join(', ') + (skippedNames.length > 3 ? '...' : ''))
-                } else {
-                  showToast(added + ' of ' + uploadData.length + ' products imported!')
-                }
-                setUploadData([])
-                setShowUpload(false)
-              }} style={{ flex: 1, padding: '12px', borderRadius: '12px', border: 'none', background: 'linear-gradient(135deg,#0f766e,#14b8a6)', color: 'white', fontWeight: '800', fontSize: '14px', cursor: 'pointer' }}>
-                Import {uploadData.length} Products
+              <button onClick={runImport} disabled={!!importing}
+                style={{ flex: 1, padding: '12px', borderRadius: '12px', border: 'none', background: importing ? '#94a3b8' : 'linear-gradient(135deg,#0f766e,#14b8a6)', color: 'white', fontWeight: '800', fontSize: '14px', cursor: importing ? 'default' : 'pointer' }}>
+                {importing || 'Import ' + uploadData.length + ' Products'}
               </button>
             )}
           </div>
