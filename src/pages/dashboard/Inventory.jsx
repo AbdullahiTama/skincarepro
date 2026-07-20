@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useMemo } from 'react'
 import { getProducts, addProduct, addProductsBulk, updateProduct, deleteProduct, deleteProductsBulk } from '../../lib/supabase'
 import { fmt, todayDate, TEAL, TEALC, PRODUCT_CATS, PRODUCT_EMOJIS } from '../../lib/utils'
 import { Card, StatCard, SectionHead, Modal, Pill, Inp, Sel, Textarea, Toggle, GhostBtn, TealBtn, RedBtn, Loading, Empty, useToast, Toast } from '../../components/ui'
@@ -75,25 +75,57 @@ export default function Inventory({ brand, products, setProducts, role, perms, l
   const [cleaningUp, setCleaningUp] = useState(false)
   const { msg: toastMsg, show: showToast } = useToast()
 
-  const duplicateGroups = findAllDuplicateGroups(products)
-  const totalDuplicateItems = duplicateGroups.reduce((s, g) => s + (g.length - 1), 0)
+  // Everything below used to be recalculated on every single render — every
+  // click, every keystroke. The duplicate scan alone compares every product
+  // against every other one, which on a catalogue of a thousand items is about
+  // a million comparisons. useMemo means it only runs when the data changes.
+  const duplicateGroups = useMemo(() => findAllDuplicateGroups(products), [products])
+  const totalDuplicateItems = useMemo(
+    () => duplicateGroups.reduce((s, g) => s + (g.length - 1), 0),
+    [duplicateGroups]
+  )
 
-  const cats = ['All', ...Array.from(new Set(products.map(p => p.cat || p.category)))]
-  const filtered = products.filter(p => {
-    const pCat = p.cat || p.category || ''
-    const pGeneric = p.generic_name || p.genericName || ''
-    return (catFilter === 'All' || pCat === catFilter) &&
-      (p.name.toLowerCase().includes(search.toLowerCase()) || pGeneric.toLowerCase().includes(search.toLowerCase()))
-  })
+  const cats = useMemo(
+    () => ['All', ...Array.from(new Set(products.map(p => p.cat || p.category)))],
+    [products]
+  )
+
+  const filtered = useMemo(() => {
+    const q = search.toLowerCase()
+    return products.filter(p => {
+      const pCat = p.cat || p.category || ''
+      const pGeneric = p.generic_name || p.genericName || ''
+      return (catFilter === 'All' || pCat === catFilter) &&
+        (p.name.toLowerCase().includes(q) || pGeneric.toLowerCase().includes(q))
+    })
+  }, [products, catFilter, search])
+
   // Rendering thousands of rows locks up the browser, so draw a page at a time.
   const ROW_CAP = 100
-  const shown = filtered.slice(0, ROW_CAP)
+  const shown = useMemo(() => filtered.slice(0, ROW_CAP), [filtered])
   const hiddenRows = filtered.length - shown.length
-  const lowStock = products.filter(p => (p.cat || p.category) !== 'Services' && p.stock > 0 && p.stock <= (p.reorder_level || 5))
-  const outOfStock = products.filter(p => (p.cat || p.category) !== 'Services' && p.stock <= 0)
-  const stockValue = products.filter(p => (p.cat || p.category) !== 'Services').reduce((s, p) => s + (p.price || 0) * (p.stock || 0), 0)
-  const costValue = products.filter(p => (p.cat || p.category) !== 'Services').reduce((s, p) => s + (p.cost_price || 0) * (p.stock || 0), 0)
-  const onCareFind = products.filter(p => p.list_on_carefind !== false && p.stock > 0).length
+
+  const stats = useMemo(() => {
+    let low = [], out = [], stockValue = 0, costValue = 0, onCareFind = 0
+    for (const p of products) {
+      const isService = (p.cat || p.category) === 'Services'
+      if (!isService) {
+        const reorder = p.reorder_level || 5
+        if (p.stock > 0 && p.stock <= reorder) low.push(p)
+        if (p.stock <= 0) out.push(p)
+        stockValue += (p.price || 0) * (p.stock || 0)
+        costValue += (p.cost_price || 0) * (p.stock || 0)
+      }
+      if (p.list_on_carefind !== false && p.stock > 0) onCareFind++
+    }
+    return { low, out, stockValue, costValue, onCareFind }
+  }, [products])
+
+  const lowStock = stats.low
+  const outOfStock = stats.out
+  const stockValue = stats.stockValue
+  const costValue = stats.costValue
+  const onCareFind = stats.onCareFind
 
   async function reload() {
     try {
