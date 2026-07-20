@@ -42,6 +42,18 @@ export default function POS({ brand, products, setProducts, role, perms }) {
     )
   }, [products, filter, search])
 
+  const stockAlerts = useMemo(() => {
+    const out = [], low = []
+    for (const p of products) {
+      if ((p.cat || p.category) === 'Services') continue
+      if (p.stock <= 0) out.push(p)
+      else if (p.stock <= (p.reorder_level || 5)) low.push(p)
+    }
+    return { out, low }
+  }, [products])
+  const outOfStockItems = stockAlerts.out
+  const lowStockItems = stockAlerts.low
+
   // Drawing a thousand tiles freezes the browser. Show a workable number and
   // let the search box do the finding — faster than scrolling anyway.
   const RENDER_CAP = 60
@@ -532,17 +544,6 @@ export default function POS({ brand, products, setProducts, role, perms }) {
   )
 
   // ── MAIN POS VIEW ────────────────────────────────────────────────────────────
-  const stockAlerts = useMemo(() => {
-    const out = [], low = []
-    for (const p of products) {
-      if ((p.cat || p.category) === 'Services') continue
-      if (p.stock <= 0) out.push(p)
-      else if (p.stock <= (p.reorder_level || 5)) low.push(p)
-    }
-    return { out, low }
-  }, [products])
-  const outOfStockItems = stockAlerts.out
-  const lowStockItems = stockAlerts.low
 
   return (
     <div style={{ display: 'flex', height: '100vh', overflow: 'hidden', flexDirection: 'column' }}>
