@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useMemo } from 'react'
 import { addSale, updateSale, getSales, getTodaySales, getSettings, queueOfflineSale, getOfflineQueue, addDebt, updateDebt } from '../../lib/supabase'
 import { fmt, genId, todayDate, nowStr, TEAL, TEALC, DARK } from '../../lib/utils'
 import { Card, Modal, Pill, GhostBtn, TealBtn, DarkBtn, Inp, Sel, Avatar, Toast, useToast } from '../../components/ui'
@@ -31,15 +31,21 @@ export default function POS({ brand, products, setProducts, role, perms }) {
   const [stockOpen, setStockOpen] = useState(false)
   const { msg: toastMsg, show: showToast } = useToast()
 
-  const cats = ['All', ...Array.from(new Set(products.map(p => p.cat)))]
-  const matching = products.filter(p =>
-    (filter === 'All' || p.cat === filter) &&
-    (p.name.toLowerCase().includes(search.toLowerCase()) || (p.generic_name || p.genericName || '').toLowerCase().includes(search.toLowerCase()))
-  )
+  // Memoised so a thousand products are not re-scanned on every click and keystroke.
+  const cats = useMemo(() => ['All', ...Array.from(new Set(products.map(p => p.cat)))], [products])
+
+  const matching = useMemo(() => {
+    const q = search.toLowerCase()
+    return products.filter(p =>
+      (filter === 'All' || p.cat === filter) &&
+      (p.name.toLowerCase().includes(q) || (p.generic_name || p.genericName || '').toLowerCase().includes(q))
+    )
+  }, [products, filter, search])
+
   // Drawing a thousand tiles freezes the browser. Show a workable number and
   // let the search box do the finding — faster than scrolling anyway.
   const RENDER_CAP = 60
-  const visible = matching.slice(0, RENDER_CAP)
+  const visible = useMemo(() => matching.slice(0, RENDER_CAP), [matching])
   const hiddenCount = matching.length - visible.length
 
   useEffect(() => {
@@ -526,8 +532,17 @@ export default function POS({ brand, products, setProducts, role, perms }) {
   )
 
   // ── MAIN POS VIEW ────────────────────────────────────────────────────────────
-  const outOfStockItems = products.filter(p => (p.cat || p.category) !== 'Services' && p.stock <= 0)
-  const lowStockItems = products.filter(p => (p.cat || p.category) !== 'Services' && p.stock > 0 && p.stock <= (p.reorder_level || 5))
+  const stockAlerts = useMemo(() => {
+    const out = [], low = []
+    for (const p of products) {
+      if ((p.cat || p.category) === 'Services') continue
+      if (p.stock <= 0) out.push(p)
+      else if (p.stock <= (p.reorder_level || 5)) low.push(p)
+    }
+    return { out, low }
+  }, [products])
+  const outOfStockItems = stockAlerts.out
+  const lowStockItems = stockAlerts.low
 
   return (
     <div style={{ display: 'flex', height: '100vh', overflow: 'hidden', flexDirection: 'column' }}>
