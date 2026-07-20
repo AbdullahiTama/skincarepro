@@ -57,7 +57,22 @@ export async function updateStaff(id, data) { return sbFetch('staff?id=eq.' + id
 export async function deleteStaff(id) { return sbFetch('staff?id=eq.' + id, { method: 'DELETE', prefer: 'return=minimal' }) }
 
 // PRODUCTS
-export async function getProducts(businessId) { return sbFetch('products?business_id=eq.' + businessId + '&order=name.asc&select=*') }
+// Supabase caps a single query at 1,000 rows, so a pharmacy with more than
+// that silently only ever saw the first 1,000. Page through until we have them all.
+export async function getProducts(businessId) {
+  const PAGE = 1000
+  const all = []
+  let offset = 0
+  while (true) {
+    const rows = await sbFetch('products?business_id=eq.' + businessId + '&order=name.asc&select=*&limit=' + PAGE + '&offset=' + offset)
+    if (!rows || rows.length === 0) break
+    all.push(...rows)
+    if (rows.length < PAGE) break
+    offset += PAGE
+    if (offset > 50000) break // safety valve
+  }
+  return all
+}
 export async function addProduct(data) { return sbFetch('products', { method: 'POST', body: JSON.stringify(data) }) }
 // Bulk insert for CSV imports. return=minimal means the server does not send
 // every inserted row back down to the phone — on a 3,000-product import that
