@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { getProducts, addProduct, updateProduct, deleteProduct, deleteProductsBulk } from '../../lib/supabase'
+import { getProducts, addProduct, addProductsBulk, updateProduct, deleteProduct, deleteProductsBulk } from '../../lib/supabase'
 import { fmt, todayDate, TEAL, TEALC, PRODUCT_CATS, PRODUCT_EMOJIS } from '../../lib/utils'
 import { Card, StatCard, SectionHead, Modal, Pill, Inp, Sel, Textarea, Toggle, GhostBtn, TealBtn, RedBtn, Loading, Empty, useToast, Toast } from '../../components/ui'
 
@@ -345,15 +345,20 @@ export default function Inventory({ brand, products, setProducts, role, perms, l
       return
     }
 
-    const BATCH = 100
+    // Large batches, several in flight at once. 3,000 products goes from
+    // thirty slow round-trips to a couple of fast ones.
+    const BATCH = 500
+    const PARALLEL = 3
     let added = 0
+    let done = 0
     const failures = []
 
-    for (let i = 0; i < rows.length; i += BATCH) {
-      const batch = rows.slice(i, i + BATCH)
-      setImporting('Importing ' + Math.min(i + batch.length, rows.length) + ' of ' + rows.length + '...')
+    const batches = []
+    for (let i = 0; i < rows.length; i += BATCH) batches.push(rows.slice(i, i + BATCH))
+
+    async function sendBatch(batch) {
       try {
-        await addProduct(batch)
+        await addProductsBulk(batch)
         added += batch.length
       } catch (e) {
         // One bad row rejects its whole batch, so retry it row by row to save the good ones.
@@ -366,6 +371,12 @@ export default function Inventory({ brand, products, setProducts, role, perms, l
           }
         }
       }
+      done += batch.length
+      setImporting('Importing ' + Math.min(done, rows.length) + ' of ' + rows.length + '...')
+    }
+
+    for (let i = 0; i < batches.length; i += PARALLEL) {
+      await Promise.all(batches.slice(i, i + PARALLEL).map(sendBatch))
     }
 
     setImporting('')
