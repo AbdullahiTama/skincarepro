@@ -85,6 +85,10 @@ export default function Inventory({ brand, products, setProducts, role, perms, l
     return (catFilter === 'All' || pCat === catFilter) &&
       (p.name.toLowerCase().includes(search.toLowerCase()) || pGeneric.toLowerCase().includes(search.toLowerCase()))
   })
+  // Rendering thousands of rows locks up the browser, so draw a page at a time.
+  const ROW_CAP = 100
+  const shown = filtered.slice(0, ROW_CAP)
+  const hiddenRows = filtered.length - shown.length
   const lowStock = products.filter(p => (p.cat || p.category) !== 'Services' && p.stock > 0 && p.stock <= (p.reorder_level || 5))
   const outOfStock = products.filter(p => (p.cat || p.category) !== 'Services' && p.stock <= 0)
   const stockValue = products.filter(p => (p.cat || p.category) !== 'Services').reduce((s, p) => s + (p.price || 0) * (p.stock || 0), 0)
@@ -465,7 +469,7 @@ export default function Inventory({ brand, products, setProducts, role, perms, l
       {lowStock.length > 0 && (
         <div style={{ marginBottom: '16px', padding: '14px 18px', borderRadius: '14px', background: '#fffbeb', border: '1px solid #fcd34d', display: 'flex', alignItems: 'flex-start', gap: '12px' }}>
           <span style={{ fontSize: '20px' }}>⚠️</span>
-          <div><div style={{ fontWeight: '700', color: '#92400e', fontSize: '14px' }}>{lowStock.length} item(s) running low</div><div style={{ fontSize: '12px', color: '#b45309', marginTop: '4px' }}>{lowStock.map(p => p.name).join(' · ')}</div></div>
+          <div><div style={{ fontWeight: '700', color: '#92400e', fontSize: '14px' }}>{lowStock.length} item(s) running low</div><div style={{ fontSize: '12px', color: '#b45309', marginTop: '4px' }}>{lowStock.slice(0, 25).map(p => p.name).join(' · ')}{lowStock.length > 25 ? ' …and ' + (lowStock.length - 25) + ' more' : ''}</div></div>
         </div>
       )}
 
@@ -498,7 +502,7 @@ export default function Inventory({ brand, products, setProducts, role, perms, l
                 </tr>
               </thead>
               <tbody>
-                {filtered.map(p => {
+                {shown.map(p => {
                   const cat = p.cat || p.category || ''
                   const low = cat !== 'Services' && p.stock > 0 && p.stock <= (p.reorder_level || 5)
                   const out = cat !== 'Services' && p.stock <= 0
@@ -545,6 +549,11 @@ export default function Inventory({ brand, products, setProducts, role, perms, l
                 })}
               </tbody>
             </table>
+            {hiddenRows > 0 && (
+              <div style={{ textAlign: 'center', padding: '14px', color: '#94a3b8', fontSize: '12px', fontWeight: '600' }}>
+                Showing {shown.length} of {filtered.length} products — use search or a category to narrow it down.
+              </div>
+            )}
           </div>
         </Card>
       )}
