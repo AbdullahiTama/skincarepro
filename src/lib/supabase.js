@@ -59,6 +59,12 @@ export async function deleteStaff(id) { return sbFetch('staff?id=eq.' + id, { me
 // PRODUCTS
 export async function getProducts(businessId) { return sbFetch('products?business_id=eq.' + businessId + '&order=name.asc&select=*') }
 export async function addProduct(data) { return sbFetch('products', { method: 'POST', body: JSON.stringify(data) }) }
+// Bulk insert for CSV imports. return=minimal means the server does not send
+// every inserted row back down to the phone — on a 3,000-product import that
+// is the difference between a minute and a few seconds.
+export async function addProductsBulk(rows) {
+  return sbFetch('products', { method: 'POST', body: JSON.stringify(rows), prefer: 'return=minimal' })
+}
 export async function updateProduct(id, data) { return sbFetch('products?id=eq.' + id, { method: 'PATCH', body: JSON.stringify(data), prefer: 'return=minimal' }) }
 export async function deleteProduct(id) { return sbFetch('products?id=eq.' + id, { method: 'DELETE', prefer: 'return=minimal' }) }
 export async function deleteProductsBulk(ids) {
