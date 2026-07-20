@@ -72,7 +72,11 @@ export default function BusinessDashboard() {
       const p = await getProducts(brand.id)
       if (p && p.length > 0) {
         setProducts(p)
-        cacheData('products_' + brand.id, p)
+        // Writing a thousand products to localStorage means turning the whole
+        // catalogue into text on the main thread, which freezes the interface
+        // for a moment every time. Only cache small catalogues; big ones load
+        // from the network anyway and the freeze is worse than the benefit.
+        if (p.length <= 400) cacheData('products_' + brand.id, p)
       } else {
         const cached = getCached('products_' + brand.id)
         if (cached) setProducts(cached)
