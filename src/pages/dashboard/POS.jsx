@@ -32,10 +32,15 @@ export default function POS({ brand, products, setProducts, role, perms }) {
   const { msg: toastMsg, show: showToast } = useToast()
 
   const cats = ['All', ...Array.from(new Set(products.map(p => p.cat)))]
-  const visible = products.filter(p =>
+  const matching = products.filter(p =>
     (filter === 'All' || p.cat === filter) &&
     (p.name.toLowerCase().includes(search.toLowerCase()) || (p.generic_name || p.genericName || '').toLowerCase().includes(search.toLowerCase()))
   )
+  // Drawing a thousand tiles freezes the browser. Show a workable number and
+  // let the search box do the finding — faster than scrolling anyway.
+  const RENDER_CAP = 60
+  const visible = matching.slice(0, RENDER_CAP)
+  const hiddenCount = matching.length - visible.length
 
   useEffect(() => {
     if (brand?.id) {
@@ -641,6 +646,11 @@ export default function POS({ brand, products, setProducts, role, perms }) {
                 </button>
               )
             })}
+            {hiddenCount > 0 && (
+              <div style={{ gridColumn: '1 / -1', textAlign: 'center', padding: '14px 10px', color: '#94a3b8', fontSize: '12px', fontWeight: '600' }}>
+                Showing {visible.length} of {matching.length} products — type in the search box to find the rest.
+              </div>
+            )}
           </div>
         </div>
 
