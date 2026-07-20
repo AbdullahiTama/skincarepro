@@ -27,34 +27,51 @@ function findDuplicate(existingProducts, name, genericName, excludeId) {
   }) || null
 }
 
-// Scan the full product list and group items that match each other by name or generic name.
-// Returns an array of groups, each group is an array of 2+ products considered duplicates of each other.
+// Groups products that match each other by name or generic name.
+// The original compared every product with every other one and re-normalised
+// the text inside the loop — about a million string operations on a catalogue
+// of a thousand. This builds lookup tables instead and joins matches together,
+// which is effectively one pass.
 function findAllDuplicateGroups(allProducts) {
-  const visited = new Set()
-  const groups = []
-  for (let i = 0; i < allProducts.length; i++) {
-    const a = allProducts[i]
-    if (visited.has(a.id)) continue
-    const nNameA = normalize(a.name)
-    const nGenericA = normalize(a.generic_name || a.genericName)
-    const group = [a]
-    for (let j = i + 1; j < allProducts.length; j++) {
-      const b = allProducts[j]
-      if (visited.has(b.id)) continue
-      const nNameB = normalize(b.name)
-      const nGenericB = normalize(b.generic_name || b.genericName)
-      const nameMatch = nNameA && nNameB && nNameA === nNameB
-      const genericMatch = nGenericA && nGenericB && nGenericA === nGenericB
-      if (nameMatch || genericMatch) {
-        group.push(b)
-        visited.add(b.id)
-      }
+  const parent = new Map()
+  function find(x) {
+    while (parent.get(x) !== x) {
+      parent.set(x, parent.get(parent.get(x)))
+      x = parent.get(x)
     }
-    if (group.length > 1) {
-      visited.add(a.id)
-      groups.push(group)
+    return x
+  }
+  function union(a, b) {
+    const ra = find(a), rb = find(b)
+    if (ra !== rb) parent.set(ra, rb)
+  }
+
+  for (const p of allProducts) parent.set(p.id, p.id)
+
+  const byName = new Map()
+  const byGeneric = new Map()
+  for (const p of allProducts) {
+    const n = normalize(p.name)
+    const g = normalize(p.generic_name || p.genericName)
+    if (n) {
+      if (byName.has(n)) union(p.id, byName.get(n))
+      else byName.set(n, p.id)
+    }
+    if (g) {
+      if (byGeneric.has(g)) union(p.id, byGeneric.get(g))
+      else byGeneric.set(g, p.id)
     }
   }
+
+  const buckets = new Map()
+  for (const p of allProducts) {
+    const root = find(p.id)
+    if (!buckets.has(root)) buckets.set(root, [])
+    buckets.get(root).push(p)
+  }
+
+  const groups = []
+  for (const g of buckets.values()) if (g.length > 1) groups.push(g)
   return groups
 }
 
@@ -79,6 +96,30 @@ export default function Inventory({ brand, products, setProducts, role, perms, l
   // click, every keystroke. The duplicate scan alone compares every product
   // against every other one, which on a catalogue of a thousand items is about
   // a million comparisons. useMemo means it only runs when the data changes.
+  // Lookup tables so the CSV preview can ask "is this already in stock?"
+  // instantly, instead of scanning the whole catalogue for every row.
+  const catalogueIndex = useMemo(() => {
+    const names = new Set(), generics = new Set()
+    for (const p of products) {
+      const n = normalize(p.name)
+      if (n) names.add(n)
+      const g = normalize(p.generic_name || p.genericName)
+      if (g) generics.add(g)
+    }
+    return { names, generics }
+  }, [products])
+
+  function alreadyInCatalogue(name, generic) {
+    const n = normalize(name)
+    const g = normalize(generic)
+    return !!((n && catalogueIndex.names.has(n)) || (g && catalogueIndex.generics.has(g)))
+  }
+
+  const uploadDupeCount = useMemo(
+    () => uploadData.reduce((n, p) => n + (alreadyInCatalogue(p.name, p.generic_name) ? 1 : 0), 0),
+    [uploadData, catalogueIndex]
+  )
+
   const duplicateGroups = useMemo(() => findAllDuplicateGroups(products), [products])
   const totalDuplicateItems = useMemo(
     () => duplicateGroups.reduce((s, g) => s + (g.length - 1), 0),
@@ -629,13 +670,13 @@ export default function Inventory({ brand, products, setProducts, role, perms, l
             <div>
               <div style={{ fontWeight: '700', color: '#059669', fontSize: '13px', marginBottom: '8px' }}>
                 ✅ {uploadData.length} products in file
-                {uploadData.filter(p => findDuplicate(products, p.name, p.generic_name)).length > 0 && (
-                  <span style={{ color: '#d97706', fontWeight: '600' }}> · {uploadData.filter(p => findDuplicate(products, p.name, p.generic_name)).length} already exist (will be skipped)</span>
+                {uploadDupeCount > 0 && (
+                  <span style={{ color: '#d97706', fontWeight: '600' }}> · {uploadDupeCount} already exist (will be skipped)</span>
                 )}
               </div>
               <div style={{ maxHeight: '180px', overflowY: 'auto', borderRadius: '10px', border: '1px solid #f0f0f0' }}>
                 {uploadData.map((p, i) => {
-                  const isDupe = !!findDuplicate(products, p.name, p.generic_name)
+                  const isDupe = alreadyInCatalogue(p.name, p.generic_name)
                   return (
                     <div key={i} style={{ display: 'flex', justifyContent: 'space-between', padding: '7px 12px', borderBottom: '1px solid #f9f9f9', fontSize: '12px', background: isDupe ? '#fffbeb' : 'transparent' }}>
                       <span style={{ fontWeight: '600', color: isDupe ? '#d97706' : '#111' }}>
