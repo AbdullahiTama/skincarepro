@@ -4,6 +4,7 @@ import {
   getCompanyEntries, addCompanyEntry, deleteCompanyEntry,
   getCustomerEntries, addCustomerEntry, deleteCustomerEntry,
   getPeerEntries, addPeerEntry, deletePeerEntry,
+  getColleagues, addColleague, updateColleague, deleteColleague,
   uploadRepReceipt, getStaff,
 } from '../../lib/supabase'
 import { fmt, nowStr } from '../../lib/utils'
@@ -41,6 +42,7 @@ export default function RepLedger({ brand, showToast }) {
   const [companyRows, setCompanyRows] = useState([])
   const [customerRows, setCustomerRows] = useState([])
   const [peerRows, setPeerRows] = useState([])
+  const [colleagues, setColleagues] = useState([])
   const [staffList, setStaffList] = useState([])
 
   // Owner can look at any rep's book; a rep only ever sees their own.
@@ -48,6 +50,8 @@ export default function RepLedger({ brand, showToast }) {
 
   const [openCustomer, setOpenCustomer] = useState(null)
   const [custSearch, setCustSearch] = useState('')
+  const [openColleague, setOpenColleague] = useState(null)
+  const [pickerSearch, setPickerSearch] = useState('')
   const [form, setForm] = useState(null) // { kind: 'customer'|'company'|'customerEntry'|'peer', ...}
   const [saving, setSaving] = useState(false)
   const [uploadingReceipt, setUploadingReceipt] = useState(false)
@@ -60,16 +64,18 @@ export default function RepLedger({ brand, showToast }) {
     if (!brand || !brand.id) return
     setLoading(true)
     try {
-      const [cus, comp, cust, peer] = await Promise.all([
+      const [cus, comp, cust, peer, colls] = await Promise.all([
         getRepCustomers(brand.id, scopeStaffId),
         getCompanyEntries(brand.id, scopeStaffId),
         getCustomerEntries(brand.id, scopeStaffId),
         getPeerEntries(brand.id, scopeStaffId),
+        getColleagues(brand.id, scopeStaffId),
       ])
       setCustomers(cus || [])
       setCompanyRows(comp || [])
       setCustomerRows(cust || [])
       setPeerRows(peer || [])
+      setColleagues(colls || [])
       if (isOwner && staffList.length === 0) {
         const st = await getStaff(brand.id)
         setStaffList(st || [])
@@ -148,9 +154,13 @@ export default function RepLedger({ brand, showToast }) {
 
   const peerBalances = useMemo(() => {
     const map = {}
+    for (const c of colleagues) {
+      map[c.id] = { id: c.id, colleague: c, name: c.name, borrowed: 0, lent: 0, settled: 0, entries: [] }
+    }
     for (const r of peerRows) {
-      const key = r.peer_staff_id || r.peer_name || 'unknown'
-      if (!map[key]) map[key] = { name: r.peer_name || 'Colleague', borrowed: 0, lent: 0, settled: 0, entries: [] }
+      // Older entries were typed by name; keep showing them alongside registered ones.
+      const key = r.colleague_id || ('name:' + (r.peer_name || 'unknown'))
+      if (!map[key]) map[key] = { id: key, colleague: null, name: r.peer_name || 'Colleague', borrowed: 0, lent: 0, settled: 0, entries: [] }
       const b = map[key]
       b.entries.push(r)
       if (r.entry_type === 'borrowed') b.borrowed += N(r.amount)
@@ -158,7 +168,7 @@ export default function RepLedger({ brand, showToast }) {
       else if (r.entry_type === 'settled') b.settled += N(r.amount)
     }
     return Object.values(map).map(b => ({ ...b, balance: b.borrowed - b.lent - b.settled }))
-  }, [peerRows])
+  }, [peerRows, colleagues])
 
   // ── saving ────────────────────────────────────────────────────────────────
   // Reps rarely collect or supply one item. These helpers drive a small
@@ -297,21 +307,55 @@ export default function RepLedger({ brand, showToast }) {
         }
       }
 
+      else if (form.kind === 'colleague') {
+        if (!form.name || !form.name.trim()) { alert('Give the colleague a name.'); setSaving(false); return }
+        if (form.id) {
+          await updateColleague(form.id, {
+            name: form.name.trim(), phone: form.phone || null,
+            company: form.company || null, note: form.note || null,
+          })
+        } else {
+          await addColleague({
+            ...base,
+            name: form.name.trim(), phone: form.phone || null,
+            company: form.company || null, note: form.note || null,
+          })
+        }
+      }
+
       else if (form.kind === 'peer') {
-        const amount = N(form.amount)
-        if (amount <= 0) { alert('Enter an amount.'); setSaving(false); return }
-        await addPeerEntry({
-          ...base,
-          peer_staff_id: form.peer_staff_id || null,
-          peer_name: form.peer_name || null,
-          entry_type: form.entry_type,
-          entry_date: form.entry_date || today(),
-          product_name: form.product_name || null,
-          quantity: N(form.quantity) || null,
-          unit: form.unit || null,
-          amount,
-          note: form.note || null,
-        })
+        if (!form.colleague_id) { alert('Pick a colleague.'); setSaving(false); return }
+        const chosen = colleagues.filter(c => c.id === form.colleague_id)[0]
+        if (form.entry_type === 'settled') {
+          const amount = N(form.amount)
+          if (amount <= 0) { alert('Enter the amount settled.'); setSaving(false); return }
+          await addPeerEntry({
+            ...base,
+            colleague_id: form.colleague_id,
+            peer_name: chosen ? chosen.name : null,
+            entry_type: 'settled',
+            entry_date: form.entry_date || today(),
+            amount,
+            note: form.note || null,
+          })
+        } else {
+          const rows = (form.lines || []).filter(l => l.product_name && (N(l.quantity) > 0 || N(l.unit_price) > 0))
+          if (rows.length === 0) { alert('Add at least one product line.'); setSaving(false); return }
+          for (const l of rows) {
+            await addPeerEntry({
+              ...base,
+              colleague_id: form.colleague_id,
+              peer_name: chosen ? chosen.name : null,
+              entry_type: form.entry_type,
+              entry_date: form.entry_date || today(),
+              product_name: l.product_name,
+              quantity: N(l.quantity) || null,
+              unit: l.unit || null,
+              amount: N(l.quantity) * N(l.unit_price),
+              note: form.note || null,
+            })
+          }
+        }
       }
 
       if (showToast) showToast('Saved')
@@ -330,6 +374,7 @@ export default function RepLedger({ brand, showToast }) {
       else if (kind === 'customerEntry') await deleteCustomerEntry(id)
       else if (kind === 'peer') await deletePeerEntry(id)
       else if (kind === 'customer') await deleteRepCustomer(id)
+      else if (kind === 'colleague') await deleteColleague(id)
       if (showToast) showToast('Deleted')
       load()
     } catch (e) {
@@ -457,6 +502,99 @@ export default function RepLedger({ brand, showToast }) {
       '<td class="r">' + fmt(grand.supplied) + '</td>' +
       '<td class="r">' + fmt(grand.paid) + '</td>' +
       '<td class="r">' + fmt(grand.balance) + '</td></tr></tfoot></table>' +
+      detailBlocks +
+      '<div class="foot">Generated by CareHub — reflects entries recorded up to the print date.</div>' +
+      '</body></html>')
+    w.document.close()
+    setTimeout(() => { w.focus(); w.print() }, 500)
+  }
+
+  function printColleague(b) {
+    printStatement(
+      'Colleague account — ' + b.name,
+      (b.colleague && b.colleague.company ? b.colleague.company + ' · ' : '') + (b.colleague && b.colleague.phone ? b.colleague.phone : '') + '   ·   Rep: ' + meName,
+      [...b.entries].sort((x, y) => (x.entry_date || '').localeCompare(y.entry_date || '')),
+      [
+        { label: 'Date', get: r => fmtDate(r.entry_date) },
+        { label: 'Detail', get: r => r.product_name || (r.entry_type === 'settled' ? 'Settled up' : '') },
+        { label: 'Qty', get: r => r.quantity ? r.quantity + ' ' + (r.unit || '') : '' },
+        { label: 'You collected', right: true, get: r => r.entry_type === 'borrowed' ? fmt(N(r.amount)) : '' },
+        { label: 'You gave', right: true, get: r => r.entry_type === 'lent' ? fmt(N(r.amount)) : '' },
+        { label: 'Settled', right: true, get: r => r.entry_type === 'settled' ? fmt(N(r.amount)) : '' },
+      ],
+      [
+        { label: 'Collected from them', value: fmt(b.borrowed) },
+        { label: 'Given to them', value: fmt(b.lent) },
+        { label: 'Settled', value: fmt(b.settled) },
+        { label: b.balance >= 0 ? 'You owe them' : 'They owe you', value: fmt(Math.abs(b.balance)), strong: true },
+      ]
+    )
+  }
+
+  // Every colleague on one sheet, the same way customers print.
+  function printAllColleagues(detailed) {
+    const list = peerBalances.filter(b => b.entries.length > 0 || b.balance !== 0)
+      .sort((a, b) => b.balance - a.balance)
+    if (list.length === 0) { alert('No colleague activity to print yet.'); return }
+
+    const w = window.open('', '_blank', 'width=900,height=1000')
+    if (!w) { alert('Your browser blocked the print window. Allow pop-ups for this site.'); return }
+
+    const grand = list.reduce((t, b) => ({
+      borrowed: t.borrowed + b.borrowed, lent: t.lent + b.lent, balance: t.balance + b.balance,
+    }), { borrowed: 0, lent: 0, balance: 0 })
+
+    const summaryRows = list.map((b, i) =>
+      '<tr><td>' + (i + 1) + '</td>' +
+      '<td><strong>' + b.name + '</strong>' + (b.colleague && b.colleague.company ? '<br><span class="mut">' + b.colleague.company + '</span>' : '') + '</td>' +
+      '<td>' + (b.colleague && b.colleague.phone ? b.colleague.phone : '') + '</td>' +
+      '<td class="r">' + fmt(b.borrowed) + '</td>' +
+      '<td class="r">' + fmt(b.lent) + '</td>' +
+      '<td class="r"><strong>' + fmt(b.balance) + '</strong></td></tr>'
+    ).join('')
+
+    let detailBlocks = ''
+    if (detailed) {
+      detailBlocks = list.map(b => {
+        const rows = [...b.entries].sort((x, y) => (x.entry_date || '').localeCompare(y.entry_date || ''))
+          .map(r =>
+            '<tr><td>' + fmtDate(r.entry_date) + '</td>' +
+            '<td>' + (r.product_name || (r.entry_type === 'settled' ? 'Settled up' : '')) + '</td>' +
+            '<td>' + (r.quantity ? r.quantity + ' ' + (r.unit || '') : '') + '</td>' +
+            '<td class="r">' + (r.entry_type === 'borrowed' ? fmt(N(r.amount)) : '') + '</td>' +
+            '<td class="r">' + (r.entry_type === 'lent' ? fmt(N(r.amount)) : '') + '</td></tr>'
+          ).join('')
+        return '<div class="block"><h2>' + b.name + '</h2>' +
+          '<table><thead><tr><th>Date</th><th>Detail</th><th>Qty</th><th class="r">You collected</th><th class="r">You gave</th></tr></thead>' +
+          '<tbody>' + rows + '</tbody></table>' +
+          '<div class="blockfoot">Balance: <strong>' + fmt(b.balance) + '</strong></div></div>'
+      }).join('')
+    }
+
+    w.document.write('<!DOCTYPE html><html><head><title>All colleagues</title><style>' +
+      '*{margin:0;padding:0;box-sizing:border-box;font-family:system-ui,-apple-system,sans-serif}' +
+      'body{padding:26px;color:#0f172a}' +
+      '.biz{font-size:13px;font-weight:800;color:#0f766e;margin-bottom:12px}' +
+      'h1{font-size:19px;margin-bottom:2px}.sub{font-size:12px;color:#64748b}' +
+      '.mut{font-size:11px;color:#94a3b8;font-weight:400}' +
+      'table{width:100%;border-collapse:collapse;margin-top:12px;font-size:12px}' +
+      'th{background:#0f172a;color:#fff;text-align:left;padding:7px 9px;font-size:10.5px;text-transform:uppercase;letter-spacing:.04em}' +
+      'td{padding:7px 9px;border-bottom:1px solid #e2e8f0;vertical-align:top}' +
+      'td.r,th.r{text-align:right}' +
+      'tfoot td{border-top:2px solid #0f172a;font-weight:900;font-size:13px}' +
+      '.block{margin-top:26px;page-break-inside:avoid}.block h2{font-size:14px;margin-bottom:2px}' +
+      '.blockfoot{text-align:right;margin-top:6px;font-size:12.5px;border-top:1px solid #cbd5e1;padding-top:5px}' +
+      '.foot{margin-top:26px;font-size:10.5px;color:#94a3b8;border-top:1px solid #e2e8f0;padding-top:8px}' +
+      '@media print{@page{margin:12mm}}' +
+      '</style></head><body>' +
+      '<div class="biz">' + (brand?.name || 'CareHub') + '</div>' +
+      '<h1>Colleague accounts — full summary</h1>' +
+      '<div class="sub">Rep: ' + meName + '</div>' +
+      '<div class="sub">Printed ' + nowStr() + '   ·   ' + list.length + ' colleague(s)</div>' +
+      '<table><thead><tr><th>#</th><th>Colleague</th><th>Phone</th><th class="r">You collected</th><th class="r">You gave</th><th class="r">Balance</th></tr></thead>' +
+      '<tbody>' + summaryRows + '</tbody>' +
+      '<tfoot><tr><td colspan="3">TOTAL</td><td class="r">' + fmt(grand.borrowed) + '</td>' +
+      '<td class="r">' + fmt(grand.lent) + '</td><td class="r">' + fmt(grand.balance) + '</td></tr></tfoot></table>' +
       detailBlocks +
       '<div class="foot">Generated by CareHub — reflects entries recorded up to the print date.</div>' +
       '</body></html>')
@@ -824,46 +962,133 @@ export default function RepLedger({ brand, showToast }) {
         )
       })()}
 
-      {/* ── PEERS ── */}
-      {tab === 'peers' && (
+      {/* ── COLLEAGUES ── */}
+      {tab === 'peers' && !openColleague && (
         <div>
-          <div style={{ display: 'flex', gap: '8px', marginBottom: '14px', flexWrap: 'wrap' }}>
-            <TealBtn onClick={() => setForm({ kind: 'peer', entry_type: 'borrowed', entry_date: today() })}>+ I collected from a colleague</TealBtn>
-            <GhostBtn onClick={() => setForm({ kind: 'peer', entry_type: 'lent', entry_date: today() })} style={{ padding: '10px 14px' }}>+ I gave to a colleague</GhostBtn>
+          <div style={{ display: 'flex', gap: '8px', marginBottom: '10px', flexWrap: 'wrap' }}>
+            <TealBtn onClick={() => setForm({ kind: 'colleague' })}>+ New colleague</TealBtn>
+            <GhostBtn onClick={() => setForm({ kind: 'peer', entry_type: 'borrowed', entry_date: today(), lines: [blankLine()] })} style={{ padding: '10px 14px' }}>+ I collected</GhostBtn>
+            <GhostBtn onClick={() => setForm({ kind: 'peer', entry_type: 'lent', entry_date: today(), lines: [blankLine()] })} style={{ padding: '10px 14px' }}>+ I gave</GhostBtn>
             <GhostBtn onClick={() => setForm({ kind: 'peer', entry_type: 'settled', entry_date: today() })} style={{ padding: '10px 14px' }}>+ Settled up</GhostBtn>
           </div>
 
-          {peerRows.length === 0 && (
-            <Card style={{ padding: '28px', textAlign: 'center', color: '#94a3b8', fontSize: '13px' }}>
-              Nothing recorded. Use this when you borrow goods from another rep, or give them some of yours.
+          {colleagues.length > 0 && (
+            <div style={{ display: 'flex', gap: '8px', marginBottom: '14px', flexWrap: 'wrap', paddingBottom: '12px', borderBottom: '1px solid #f1f5f9' }}>
+              <GhostBtn onClick={() => printAllColleagues(false)} style={{ padding: '10px 14px' }}>Print all — summary</GhostBtn>
+              <GhostBtn onClick={() => printAllColleagues(true)} style={{ padding: '10px 14px' }}>Print all — full detail</GhostBtn>
+            </div>
+          )}
+
+          {colleagues.length === 0 && peerBalances.length === 0 && (
+            <Card style={{ padding: '28px', textAlign: 'center' }}>
+              <div style={{ fontWeight: '800', color: '#0f172a', marginBottom: '6px' }}>No colleagues yet</div>
+              <div style={{ fontSize: '13px', color: '#888', marginBottom: '14px' }}>
+                Register the reps you exchange goods with, then record what moves between you.
+              </div>
+              <TealBtn onClick={() => setForm({ kind: 'colleague' })}>+ New colleague</TealBtn>
             </Card>
           )}
 
-          {peerBalances.map((b, i) => (
-            <Card key={i} style={{ padding: '14px', marginBottom: '10px' }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '8px' }}>
-                <span style={{ fontSize: '14px', fontWeight: '800', color: '#0f172a' }}>{b.name}</span>
-                <span style={{ fontSize: '14px', fontWeight: '900', color: b.balance > 0 ? '#dc2626' : b.balance < 0 ? '#059669' : '#94a3b8' }}>
-                  {b.balance > 0 ? 'You owe ' + fmt(b.balance) : b.balance < 0 ? 'Owes you ' + fmt(Math.abs(b.balance)) : 'Settled'}
-                </span>
-              </div>
-              {b.entries.map(r => (
-                <div key={r.id} style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0', borderTop: '1px solid #f1f5f9' }}>
-                  <span style={{ fontSize: '12px', color: '#64748b' }}>
-                    {fmtDate(r.entry_date)} · {r.entry_type === 'borrowed' ? 'collected' : r.entry_type === 'lent' ? 'gave' : 'settled'}
-                    {r.product_name ? ' · ' + r.product_name : ''}
-                  </span>
-                  <span style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                    <span style={{ fontSize: '12.5px', fontWeight: '800' }}>{fmt(N(r.amount))}</span>
-                    <button onClick={() => removeRow('peer', r.id)}
-                      style={{ background: 'none', border: 'none', color: '#cbd5e1', fontSize: '11px', cursor: 'pointer' }}>✕</button>
-                  </span>
+          {peerBalances.sort((a, b) => b.balance - a.balance).map(b => (
+            <Card key={b.id} style={{ padding: '14px', marginBottom: '8px', cursor: 'pointer' }}
+              onClick={() => setOpenColleague(b.id)}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', gap: '10px' }}>
+                <div style={{ minWidth: 0 }}>
+                  <div style={{ fontSize: '14px', fontWeight: '800', color: '#0f172a' }}>{b.name}</div>
+                  {b.colleague && (
+                    <div style={{ fontSize: '11.5px', color: '#94a3b8', marginTop: '2px' }}>
+                      {[b.colleague.company, b.colleague.phone].filter(Boolean).join(' · ')}
+                    </div>
+                  )}
+                  <div style={{ fontSize: '11px', color: '#cbd5e1', marginTop: '3px' }}>{b.entries.length} entr{b.entries.length === 1 ? 'y' : 'ies'} ›</div>
                 </div>
-              ))}
+                <div style={{ textAlign: 'right', flexShrink: 0 }}>
+                  <div style={{ fontSize: '10.5px', fontWeight: '800', color: '#94a3b8', textTransform: 'uppercase' }}>
+                    {b.balance > 0 ? 'You owe' : b.balance < 0 ? 'Owes you' : 'Settled'}
+                  </div>
+                  <div style={{ fontSize: '17px', fontWeight: '900', color: b.balance > 0 ? '#dc2626' : '#059669' }}>
+                    {fmt(Math.abs(b.balance))}
+                  </div>
+                </div>
+              </div>
             </Card>
           ))}
         </div>
       )}
+
+      {/* ── ONE COLLEAGUE ── */}
+      {tab === 'peers' && openColleague && (() => {
+        const b = peerBalances.filter(x => x.id === openColleague)[0]
+        if (!b) return null
+        return (
+          <div>
+            <button onClick={() => setOpenColleague(null)}
+              style={{ background: 'none', border: 'none', color: '#0f766e', fontSize: '13px', fontWeight: '700', cursor: 'pointer', padding: 0, marginBottom: '12px' }}>
+              ← All colleagues
+            </button>
+
+            <Card style={{ padding: '16px', marginBottom: '12px' }}>
+              <div style={{ fontSize: '17px', fontWeight: '900', color: '#0f172a' }}>{b.name}</div>
+              {b.colleague && (
+                <div style={{ fontSize: '12.5px', color: '#64748b', marginTop: '3px' }}>
+                  {[b.colleague.company, b.colleague.phone].filter(Boolean).join(' · ')}
+                </div>
+              )}
+
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '8px', marginTop: '14px' }}>
+                <div><div style={{ fontSize: '10.5px', color: '#94a3b8', fontWeight: '800' }}>COLLECTED</div><div style={{ fontSize: '14px', fontWeight: '900' }}>{fmt(b.borrowed)}</div></div>
+                <div><div style={{ fontSize: '10.5px', color: '#94a3b8', fontWeight: '800' }}>GAVE</div><div style={{ fontSize: '14px', fontWeight: '900', color: '#059669' }}>{fmt(b.lent)}</div></div>
+                <div><div style={{ fontSize: '10.5px', color: '#94a3b8', fontWeight: '800' }}>BALANCE</div><div style={{ fontSize: '14px', fontWeight: '900', color: b.balance > 0 ? '#dc2626' : '#059669' }}>{fmt(Math.abs(b.balance))}</div></div>
+              </div>
+
+              <div style={{ display: 'flex', gap: '8px', marginTop: '14px', flexWrap: 'wrap' }}>
+                {b.colleague && (
+                  <>
+                    <TealBtn onClick={() => setForm({ kind: 'peer', entry_type: 'borrowed', colleague_id: b.colleague.id, entry_date: today(), lines: [blankLine()] })} style={{ flex: 1, padding: '11px' }}>+ Collected</TealBtn>
+                    <GhostBtn onClick={() => setForm({ kind: 'peer', entry_type: 'lent', colleague_id: b.colleague.id, entry_date: today(), lines: [blankLine()] })} style={{ flex: 1, padding: '11px' }}>+ Gave</GhostBtn>
+                  </>
+                )}
+                <GhostBtn onClick={() => printColleague(b)} style={{ flex: 1, padding: '11px' }}>Print</GhostBtn>
+              </div>
+              {b.colleague && (
+                <button onClick={() => setForm({ kind: 'colleague', ...b.colleague })}
+                  style={{ marginTop: '10px', background: 'none', border: 'none', color: '#94a3b8', fontSize: '12px', fontWeight: '700', cursor: 'pointer', padding: 0 }}>
+                  Edit colleague details
+                </button>
+              )}
+            </Card>
+
+            {b.entries.length === 0 && <Card style={{ padding: '24px', textAlign: 'center', color: '#94a3b8', fontSize: '13px' }}>Nothing recorded with this colleague yet.</Card>}
+
+            {b.entries.map(r => (
+              <Card key={r.id} style={{ padding: '13px', marginBottom: '8px' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', gap: '10px' }}>
+                  <div style={{ minWidth: 0 }}>
+                    <div style={{ fontSize: '13.5px', fontWeight: '800', color: '#0f172a' }}>
+                      {r.product_name || (r.entry_type === 'settled' ? 'Settled up' : 'Goods')}
+                    </div>
+                    <div style={{ fontSize: '11.5px', color: '#94a3b8', marginTop: '2px' }}>
+                      {fmtDate(r.entry_date)}
+                      {r.quantity ? ' · ' + r.quantity + ' ' + (r.unit || '') : ''}
+                      {' · '}{r.entry_type === 'borrowed' ? 'you collected' : r.entry_type === 'lent' ? 'you gave' : 'settled'}
+                    </div>
+                    {r.note && <div style={{ fontSize: '12px', color: '#64748b', marginTop: '3px' }}>{r.note}</div>}
+                  </div>
+                  <div style={{ textAlign: 'right', flexShrink: 0 }}>
+                    <div style={{ fontSize: '14px', fontWeight: '900', color: r.entry_type === 'borrowed' ? '#dc2626' : '#059669' }}>
+                      {r.entry_type === 'borrowed' ? '+' : '−'}{fmt(N(r.amount))}
+                    </div>
+                    <button onClick={() => removeRow('peer', r.id)}
+                      style={{ marginTop: '4px', background: 'none', border: 'none', color: '#cbd5e1', fontSize: '11px', fontWeight: '700', cursor: 'pointer' }}>
+                      Delete
+                    </button>
+                  </div>
+                </div>
+              </Card>
+            ))}
+          </div>
+        )
+      })()}
 
       {/* ── FORM SHEET ── */}
       {form && (
@@ -873,6 +1098,7 @@ export default function RepLedger({ brand, showToast }) {
               {form.kind === 'customer' ? (form.id ? 'Edit customer' : 'New customer')
                 : form.kind === 'company' ? (form.entry_type === 'collected' ? 'Goods collected from company' : form.entry_type === 'remitted' ? 'Money paid to company' : 'Goods returned to company')
                 : form.kind === 'customerEntry' ? (form.entry_type === 'supplied' ? 'Goods supplied to customer' : form.entry_type === 'payment' ? 'Payment received' : 'Goods returned by customer')
+                : form.kind === 'colleague' ? (form.id ? 'Edit colleague' : 'New colleague')
                 : (form.entry_type === 'borrowed' ? 'Collected from a colleague' : form.entry_type === 'lent' ? 'Gave to a colleague' : 'Settled up with a colleague')}
             </div>
 
@@ -929,14 +1155,20 @@ export default function RepLedger({ brand, showToast }) {
 
               {form.kind === 'customerEntry' && (
                 <>
-                  <div>
-                    <div style={{ fontSize: '12px', fontWeight: '700', color: '#334155', marginBottom: '6px' }}>Customer *</div>
-                    <select value={form.customer_id || ''} onChange={e => setForm({ ...form, customer_id: e.target.value })}
-                      style={{ width: '100%', padding: '11px 12px', borderRadius: '10px', border: '1px solid #e2e8f0', fontSize: '13px', background: 'white' }}>
-                      <option value=''>Choose…</option>
-                      {customers.map(c => <option key={c.id} value={c.id}>{c.name}{c.shop_name ? ' — ' + c.shop_name : ''}</option>)}
-                    </select>
-                  </div>
+                  <EntityPicker
+                    label='Customer *'
+                    items={customerBalances.map(b => ({
+                      id: b.customer.id,
+                      label: b.customer.name,
+                      sub: [b.customer.shop_name, b.customer.phone].filter(Boolean).join(' · '),
+                      right: b.balance > 0 ? 'owes ' + fmt(b.balance) : '',
+                      rightColor: '#dc2626',
+                    }))}
+                    value={form.customer_id || ''}
+                    onChange={v => setForm({ ...form, customer_id: v })}
+                    search={pickerSearch} setSearch={setPickerSearch}
+                    emptyHint='No customers yet — add one first.'
+                  />
                   <Inp label='Date' value={form.entry_date} onChange={v => setForm({ ...form, entry_date: v })} type='date' />
 
                   {form.entry_type === 'payment' ? (
@@ -977,16 +1209,40 @@ export default function RepLedger({ brand, showToast }) {
                 </>
               )}
 
+              {form.kind === 'colleague' && (
+                <>
+                  <Inp label='Colleague name *' value={form.name} onChange={v => setForm({ ...form, name: v })} placeholder='e.g. Tunde Adewale' />
+                  <Inp label='Phone' value={form.phone} onChange={v => setForm({ ...form, phone: v })} placeholder='080…' />
+                  <Inp label='Company / territory' value={form.company} onChange={v => setForm({ ...form, company: v })} placeholder='Where they work' />
+                  <Textarea label='Note' value={form.note} onChange={v => setForm({ ...form, note: v })} rows={2} />
+                </>
+              )}
+
               {form.kind === 'peer' && (
                 <>
-                  <Inp label='Colleague name *' value={form.peer_name} onChange={v => setForm({ ...form, peer_name: v })} placeholder='Who?' />
+                  <EntityPicker
+                    label='Colleague *'
+                    items={peerBalances.filter(b => b.colleague).map(b => ({
+                      id: b.colleague.id,
+                      label: b.colleague.name,
+                      sub: [b.colleague.company, b.colleague.phone].filter(Boolean).join(' · '),
+                      right: b.balance > 0 ? 'you owe ' + fmt(b.balance) : b.balance < 0 ? 'owes you ' + fmt(Math.abs(b.balance)) : '',
+                      rightColor: b.balance > 0 ? '#dc2626' : '#059669',
+                    }))}
+                    value={form.colleague_id || ''}
+                    onChange={v => setForm({ ...form, colleague_id: v })}
+                    search={pickerSearch} setSearch={setPickerSearch}
+                    emptyHint='No colleagues registered yet — add one first.'
+                  />
                   <Inp label='Date' value={form.entry_date} onChange={v => setForm({ ...form, entry_date: v })} type='date' />
-                  <Inp label='Product' value={form.product_name} onChange={v => setForm({ ...form, product_name: v })} placeholder='What was it?' />
-                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
-                    <Inp label='Quantity' value={form.quantity} onChange={v => setForm({ ...form, quantity: v })} type='number' placeholder='0' />
-                    <Inp label='Unit' value={form.unit} onChange={v => setForm({ ...form, unit: v })} placeholder='carton, pack…' />
-                  </div>
-                  <Inp label='Value (₦) *' value={form.amount} onChange={v => setForm({ ...form, amount: v })} type='number' placeholder='0' />
+
+                  {form.entry_type === 'settled' ? (
+                    <Inp label='Amount settled (₦) *' value={form.amount} onChange={v => setForm({ ...form, amount: v })} type='number' placeholder='0' />
+                  ) : (
+                    <LineGrid form={form} priceField='unit_price' priceLabel='Value'
+                      setLine={setLine} removeLine={removeLine} total={linesTotal(form, 'unit_price')} />
+                  )}
+
                   <Textarea label='Note' value={form.note} onChange={v => setForm({ ...form, note: v })} rows={2} />
                 </>
               )}
@@ -1088,6 +1344,68 @@ function LineGrid({ form, priceField, priceLabel, showCost, setLine, removeLine,
         <span style={{ fontSize: '12px', fontWeight: '700', color: '#94a3b8' }}>TOTAL</span>
         <span style={{ fontSize: '19px', fontWeight: '900' }}>₦{Number(total || 0).toLocaleString()}</span>
       </div>
+    </div>
+  )
+}
+
+// A dropdown is useless at two hundred customers. This filters as you type and
+// shows the running balance beside each name, so the rep picks with context.
+function EntityPicker({ label, items, value, onChange, search, setSearch, emptyHint }) {
+  const q = (search || '').trim().toLowerCase()
+  const filtered = q
+    ? items.filter(i =>
+        (i.label || '').toLowerCase().includes(q) ||
+        (i.sub || '').toLowerCase().includes(q))
+    : items
+  const chosen = items.filter(i => i.id === value)[0]
+
+  if (chosen) {
+    return (
+      <div>
+        <div style={{ fontSize: '12px', fontWeight: '700', color: '#334155', marginBottom: '6px' }}>{label}</div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '10px', padding: '11px 12px', border: '1px solid #0f766e', background: '#f0fdfa', borderRadius: '10px' }}>
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <div style={{ fontSize: '13.5px', fontWeight: '800', color: '#0f172a' }}>{chosen.label}</div>
+            {chosen.sub && <div style={{ fontSize: '11.5px', color: '#64748b' }}>{chosen.sub}</div>}
+          </div>
+          <button type='button' onClick={() => { onChange(''); setSearch('') }}
+            style={{ background: 'none', border: 'none', color: '#0f766e', fontSize: '11.5px', fontWeight: '700', cursor: 'pointer' }}>
+            Change
+          </button>
+        </div>
+      </div>
+    )
+  }
+
+  return (
+    <div>
+      <div style={{ fontSize: '12px', fontWeight: '700', color: '#334155', marginBottom: '6px' }}>{label}</div>
+      <input value={search} onChange={e => setSearch(e.target.value)}
+        placeholder='Type a name to search…'
+        style={{ width: '100%', padding: '11px 12px', borderRadius: '10px', border: '1px solid #e2e8f0', fontSize: '13px', boxSizing: 'border-box', outline: 'none' }} />
+
+      {items.length === 0 && (
+        <div style={{ fontSize: '12px', color: '#94a3b8', marginTop: '8px' }}>{emptyHint}</div>
+      )}
+
+      {items.length > 0 && (
+        <div style={{ maxHeight: '190px', overflowY: 'auto', border: '1px solid #f1f5f9', borderRadius: '10px', marginTop: '8px' }}>
+          {filtered.length === 0 && (
+            <div style={{ padding: '14px', fontSize: '12.5px', color: '#94a3b8', textAlign: 'center' }}>No match for “{search}”</div>
+          )}
+          {filtered.map(i => (
+            <button key={i.id} type='button' onClick={() => { onChange(i.id); setSearch('') }}
+              style={{ width: '100%', display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '10px',
+                padding: '11px 12px', border: 'none', borderBottom: '1px solid #f8fafc', background: 'white', cursor: 'pointer', textAlign: 'left' }}>
+              <span style={{ minWidth: 0 }}>
+                <span style={{ display: 'block', fontSize: '13px', fontWeight: '700', color: '#0f172a' }}>{i.label}</span>
+                {i.sub && <span style={{ display: 'block', fontSize: '11px', color: '#94a3b8' }}>{i.sub}</span>}
+              </span>
+              {i.right && <span style={{ flexShrink: 0, fontSize: '12px', fontWeight: '800', color: i.rightColor || '#64748b' }}>{i.right}</span>}
+            </button>
+          ))}
+        </div>
+      )}
     </div>
   )
 }
