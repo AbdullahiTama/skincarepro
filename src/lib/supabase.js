@@ -760,6 +760,19 @@ export async function deleteRepCustomer(id) {
   return sbFetch('rep_customers?id=eq.' + id, { method: 'DELETE', prefer: 'return=minimal' })
 }
 
+export async function getColleagues(businessId, staffId) {
+  return sbFetch('rep_colleagues?' + repScope(businessId, staffId) + '&order=name.asc&select=*')
+}
+export async function addColleague(data) {
+  return sbFetch('rep_colleagues', { method: 'POST', body: JSON.stringify(data) })
+}
+export async function updateColleague(id, data) {
+  return sbFetch('rep_colleagues?id=eq.' + id, { method: 'PATCH', body: JSON.stringify(data), prefer: 'return=minimal' })
+}
+export async function deleteColleague(id) {
+  return sbFetch('rep_colleagues?id=eq.' + id, { method: 'DELETE', prefer: 'return=minimal' })
+}
+
 export async function getCompanyEntries(businessId, staffId) {
   return sbFetch('rep_company_entries?' + repScope(businessId, staffId) + '&order=entry_date.desc&select=*')
 }
