@@ -4,7 +4,7 @@ import {
   getCompanyEntries, addCompanyEntry, deleteCompanyEntry,
   getCustomerEntries, addCustomerEntry, deleteCustomerEntry,
   getPeerEntries, addPeerEntry, deletePeerEntry,
-  getStaff,
+  uploadRepReceipt, getStaff,
 } from '../../lib/supabase'
 import { fmt, nowStr } from '../../lib/utils'
 import { Card, Inp, Sel, Textarea, TealBtn, GhostBtn, RedBtn } from '../../components/ui'
@@ -47,8 +47,10 @@ export default function RepLedger({ brand, showToast }) {
   const [viewStaffId, setViewStaffId] = useState('')
 
   const [openCustomer, setOpenCustomer] = useState(null)
+  const [custSearch, setCustSearch] = useState('')
   const [form, setForm] = useState(null) // { kind: 'customer'|'company'|'customerEntry'|'peer', ...}
   const [saving, setSaving] = useState(false)
+  const [uploadingReceipt, setUploadingReceipt] = useState(false)
 
   useEffect(() => { load() }, [brand?.id, viewStaffId])
 
@@ -131,6 +133,19 @@ export default function RepLedger({ brand, showToast }) {
     return Object.values(map).map(b => ({ ...b, balance: b.supplied - b.paid - b.returned }))
   }, [customers, customerRows])
 
+  // With hundreds of customers, scrolling is not a search. Filter by name,
+  // shop or phone — whichever the rep remembers first.
+  const visibleCustomerBalances = useMemo(() => {
+    const q = custSearch.trim().toLowerCase()
+    const list = q
+      ? customerBalances.filter(b =>
+          (b.customer.name || '').toLowerCase().includes(q) ||
+          (b.customer.shop_name || '').toLowerCase().includes(q) ||
+          (b.customer.phone || '').toLowerCase().includes(q))
+      : customerBalances
+    return [...list].sort((a, b) => b.balance - a.balance)
+  }, [customerBalances, custSearch])
+
   const peerBalances = useMemo(() => {
     const map = {}
     for (const r of peerRows) {
@@ -170,6 +185,22 @@ export default function RepLedger({ brand, showToast }) {
     return (form.lines || []).reduce((t, l) => t + N(l.quantity) * N(l[priceField]), 0)
   }
 
+  // Optional proof — a photo of the waybill, invoice or payment slip.
+  async function pickReceipt(e) {
+    const file = (e.target.files || [])[0]
+    e.target.value = ''
+    if (!file) return
+    setUploadingReceipt(true)
+    try {
+      const url = await uploadRepReceipt(file)
+      setForm(f => ({ ...f, receipt_url: url }))
+      if (showToast) showToast('Receipt attached')
+    } catch (err) {
+      alert('Could not upload the receipt:\n\n' + (err.message || 'Unknown error'))
+    }
+    setUploadingReceipt(false)
+  }
+
   async function save() {
     if (!form) return
     setSaving(true)
@@ -203,6 +234,7 @@ export default function RepLedger({ brand, showToast }) {
             entry_date: form.entry_date || today(),
             amount,
             reference: form.reference || null,
+            receipt_url: form.receipt_url || null,
             note: form.note || null,
           })
         } else {
@@ -220,6 +252,7 @@ export default function RepLedger({ brand, showToast }) {
               unit_cost: N(l.unit_cost) || null,
               amount,
               reference: form.reference || null,
+              receipt_url: form.receipt_url || null,
               note: form.note || null,
             })
           }
@@ -237,6 +270,7 @@ export default function RepLedger({ brand, showToast }) {
             entry_type: 'payment',
             entry_date: form.entry_date || today(),
             amount,
+            receipt_url: form.receipt_url || null,
             note: form.note || null,
           })
         } else {
@@ -256,6 +290,7 @@ export default function RepLedger({ brand, showToast }) {
               unit_cost: N(l.unit_cost) || null,
               amount,
               due_date: form.due_date || null,
+              receipt_url: form.receipt_url || null,
               note: form.note || null,
             })
           }
@@ -626,6 +661,12 @@ export default function RepLedger({ brand, showToast }) {
                     {r.reference ? ' · ' + r.reference : ''}
                   </div>
                   {r.note && <div style={{ fontSize: '12px', color: '#64748b', marginTop: '3px' }}>{r.note}</div>}
+                  {r.receipt_url && (
+                    <a href={r.receipt_url} target='_blank' rel='noreferrer'
+                      style={{ display: 'inline-block', marginTop: '5px', fontSize: '11.5px', fontWeight: '700', color: '#0f766e', textDecoration: 'none' }}>
+                      📎 View receipt
+                    </a>
+                  )}
                 </div>
                 <div style={{ textAlign: 'right', flexShrink: 0 }}>
                   <div style={{ fontSize: '14px', fontWeight: '900', color: r.entry_type === 'collected' ? '#dc2626' : '#059669' }}>
@@ -668,9 +709,23 @@ export default function RepLedger({ brand, showToast }) {
             </Card>
           )}
 
-          {customerBalances
-            .sort((a, b) => b.balance - a.balance)
-            .map(b => (
+          {customers.length > 3 && (
+            <input value={custSearch} onChange={e => setCustSearch(e.target.value)}
+              placeholder='Search customer, shop or phone…'
+              style={{ width: '100%', padding: '12px 14px', borderRadius: '12px', border: '1px solid #e2e8f0', fontSize: '13.5px', boxSizing: 'border-box', outline: 'none', marginBottom: '10px' }} />
+          )}
+
+          {custSearch && (
+            <div style={{ fontSize: '11.5px', color: '#94a3b8', marginBottom: '8px' }}>
+              {visibleCustomerBalances.length} of {customerBalances.length} customers
+              <button onClick={() => setCustSearch('')}
+                style={{ marginLeft: '8px', background: 'none', border: 'none', color: '#0f766e', fontSize: '11.5px', fontWeight: '700', cursor: 'pointer', padding: 0 }}>
+                Clear
+              </button>
+            </div>
+          )}
+
+          {visibleCustomerBalances.map(b => (
               <Card key={b.customer.id} style={{ padding: '14px', marginBottom: '8px', cursor: 'pointer' }}
                 onClick={() => setOpenCustomer(b.customer.id)}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', gap: '10px' }}>
@@ -692,7 +747,7 @@ export default function RepLedger({ brand, showToast }) {
                   </div>
                 </div>
               </Card>
-            ))}
+          ))}
         </div>
       )}
 
@@ -746,6 +801,12 @@ export default function RepLedger({ brand, showToast }) {
                       {r.due_date ? ' · due ' + fmtDate(r.due_date) : ''}
                     </div>
                     {r.note && <div style={{ fontSize: '12px', color: '#64748b', marginTop: '3px' }}>{r.note}</div>}
+                    {r.receipt_url && (
+                      <a href={r.receipt_url} target='_blank' rel='noreferrer'
+                        style={{ display: 'inline-block', marginTop: '5px', fontSize: '11.5px', fontWeight: '700', color: '#0f766e', textDecoration: 'none' }}>
+                        📎 View receipt
+                      </a>
+                    )}
                   </div>
                   <div style={{ textAlign: 'right', flexShrink: 0 }}>
                     <div style={{ fontSize: '14px', fontWeight: '900', color: r.entry_type === 'supplied' ? '#dc2626' : '#059669' }}>
@@ -838,6 +899,30 @@ export default function RepLedger({ brand, showToast }) {
                   )}
 
                   <Inp label='Reference / invoice no.' value={form.reference} onChange={v => setForm({ ...form, reference: v })} placeholder='Optional — applies to all lines' />
+                  <div>
+                    <div style={{ fontSize: '12px', fontWeight: '700', color: '#334155', marginBottom: '6px' }}>
+                      Receipt or invoice <span style={{ fontWeight: '500', color: '#94a3b8' }}>(optional)</span>
+                    </div>
+                    {form.receipt_url ? (
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '10px', padding: '10px', border: '1px solid #ccfbf1', background: '#f0fdfa', borderRadius: '10px' }}>
+                        <div style={{ width: '44px', height: '44px', borderRadius: '8px', flexShrink: 0, background: 'url(' + form.receipt_url + ') center/cover', border: '1px solid #e2e8f0' }} />
+                        <a href={form.receipt_url} target='_blank' rel='noreferrer'
+                          style={{ flex: 1, fontSize: '12.5px', fontWeight: '700', color: '#0f766e', textDecoration: 'none' }}>
+                          Attached — tap to view
+                        </a>
+                        <button type='button' onClick={() => setForm({ ...form, receipt_url: null })}
+                          style={{ background: 'none', border: 'none', color: '#dc2626', fontSize: '11.5px', fontWeight: '700', cursor: 'pointer' }}>
+                          Remove
+                        </button>
+                      </div>
+                    ) : (
+                      <label style={{ display: 'block', border: '1px dashed #cbd5e1', borderRadius: '10px', padding: '13px', textAlign: 'center', cursor: 'pointer', background: '#f8fafc', fontSize: '12.5px', fontWeight: '700', color: '#0f766e' }}>
+                        {uploadingReceipt ? 'Uploading…' : '📎 Attach a photo of the receipt'}
+                        <input type='file' accept='image/*,application/pdf' onChange={pickReceipt} style={{ display: 'none' }} />
+                      </label>
+                    )}
+                  </div>
+
                   <Textarea label='Note' value={form.note} onChange={v => setForm({ ...form, note: v })} rows={2} />
                 </>
               )}
@@ -863,6 +948,30 @@ export default function RepLedger({ brand, showToast }) {
                       <Inp label='Balance due by' value={form.due_date} onChange={v => setForm({ ...form, due_date: v })} type='date' />
                     </>
                   )}
+
+                  <div>
+                    <div style={{ fontSize: '12px', fontWeight: '700', color: '#334155', marginBottom: '6px' }}>
+                      Receipt or invoice <span style={{ fontWeight: '500', color: '#94a3b8' }}>(optional)</span>
+                    </div>
+                    {form.receipt_url ? (
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '10px', padding: '10px', border: '1px solid #ccfbf1', background: '#f0fdfa', borderRadius: '10px' }}>
+                        <div style={{ width: '44px', height: '44px', borderRadius: '8px', flexShrink: 0, background: 'url(' + form.receipt_url + ') center/cover', border: '1px solid #e2e8f0' }} />
+                        <a href={form.receipt_url} target='_blank' rel='noreferrer'
+                          style={{ flex: 1, fontSize: '12.5px', fontWeight: '700', color: '#0f766e', textDecoration: 'none' }}>
+                          Attached — tap to view
+                        </a>
+                        <button type='button' onClick={() => setForm({ ...form, receipt_url: null })}
+                          style={{ background: 'none', border: 'none', color: '#dc2626', fontSize: '11.5px', fontWeight: '700', cursor: 'pointer' }}>
+                          Remove
+                        </button>
+                      </div>
+                    ) : (
+                      <label style={{ display: 'block', border: '1px dashed #cbd5e1', borderRadius: '10px', padding: '13px', textAlign: 'center', cursor: 'pointer', background: '#f8fafc', fontSize: '12.5px', fontWeight: '700', color: '#0f766e' }}>
+                        {uploadingReceipt ? 'Uploading…' : '📎 Attach a photo of the receipt'}
+                        <input type='file' accept='image/*,application/pdf' onChange={pickReceipt} style={{ display: 'none' }} />
+                      </label>
+                    )}
+                  </div>
 
                   <Textarea label='Note' value={form.note} onChange={v => setForm({ ...form, note: v })} rows={2} />
                 </>
