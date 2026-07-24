@@ -716,6 +716,58 @@ export async function commentOnActivity(data, businessId, repStaffId) {
   return saved
 }
 
+// REP LEDGER (the rep's own account books — company, customers, other reps)
+// A rep can only ever be shown their own rows; staffId null means the Owner,
+// who sees the whole company's ledger.
+function repScope(businessId, staffId) {
+  let q = 'business_id=eq.' + businessId
+  if (staffId) q += '&staff_id=eq.' + staffId
+  return q
+}
+
+export async function getRepCustomers(businessId, staffId) {
+  return sbFetch('rep_customers?' + repScope(businessId, staffId) + '&order=name.asc&select=*')
+}
+export async function addRepCustomer(data) {
+  return sbFetch('rep_customers', { method: 'POST', body: JSON.stringify(data) })
+}
+export async function updateRepCustomer(id, data) {
+  return sbFetch('rep_customers?id=eq.' + id, { method: 'PATCH', body: JSON.stringify(data), prefer: 'return=minimal' })
+}
+export async function deleteRepCustomer(id) {
+  return sbFetch('rep_customers?id=eq.' + id, { method: 'DELETE', prefer: 'return=minimal' })
+}
+
+export async function getCompanyEntries(businessId, staffId) {
+  return sbFetch('rep_company_entries?' + repScope(businessId, staffId) + '&order=entry_date.desc&select=*')
+}
+export async function addCompanyEntry(data) {
+  return sbFetch('rep_company_entries', { method: 'POST', body: JSON.stringify(data) })
+}
+export async function deleteCompanyEntry(id) {
+  return sbFetch('rep_company_entries?id=eq.' + id, { method: 'DELETE', prefer: 'return=minimal' })
+}
+
+export async function getCustomerEntries(businessId, staffId) {
+  return sbFetch('rep_customer_entries?' + repScope(businessId, staffId) + '&order=entry_date.desc&select=*')
+}
+export async function addCustomerEntry(data) {
+  return sbFetch('rep_customer_entries', { method: 'POST', body: JSON.stringify(data) })
+}
+export async function deleteCustomerEntry(id) {
+  return sbFetch('rep_customer_entries?id=eq.' + id, { method: 'DELETE', prefer: 'return=minimal' })
+}
+
+export async function getPeerEntries(businessId, staffId) {
+  return sbFetch('rep_peer_entries?' + repScope(businessId, staffId) + '&order=entry_date.desc&select=*')
+}
+export async function addPeerEntry(data) {
+  return sbFetch('rep_peer_entries', { method: 'POST', body: JSON.stringify(data) })
+}
+export async function deletePeerEntry(id) {
+  return sbFetch('rep_peer_entries?id=eq.' + id, { method: 'DELETE', prefer: 'return=minimal' })
+}
+
 // OFFLINE SUPPORT
 const CACHE = 'carehub_v1'
 export function cacheData(key, data) {
