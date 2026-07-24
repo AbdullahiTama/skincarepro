@@ -146,6 +146,30 @@ export default function RepLedger({ brand, showToast }) {
   }, [peerRows])
 
   // ── saving ────────────────────────────────────────────────────────────────
+  // Reps rarely collect or supply one item. These helpers drive a small
+  // multi-line grid so a whole delivery is entered once and saved once.
+  function blankLine() {
+    return { product_name: '', quantity: '', unit: '', unit_price: '', unit_cost: '' }
+  }
+  function setLine(i, field, value) {
+    setForm(f => {
+      const lines = [...(f.lines || [])]
+      lines[i] = { ...lines[i], [field]: value }
+      // Typing on the last row adds the next one, so there is no "add" tap in the flow.
+      if (i === lines.length - 1 && (lines[i].product_name || '').trim()) lines.push(blankLine())
+      return { ...f, lines }
+    })
+  }
+  function removeLine(i) {
+    setForm(f => {
+      const lines = (f.lines || []).filter((_, x) => x !== i)
+      return { ...f, lines: lines.length ? lines : [blankLine()] }
+    })
+  }
+  function linesTotal(form, priceField) {
+    return (form.lines || []).reduce((t, l) => t + N(l.quantity) * N(l[priceField]), 0)
+  }
+
   async function save() {
     if (!form) return
     setSaving(true)
@@ -169,44 +193,73 @@ export default function RepLedger({ brand, showToast }) {
       }
 
       else if (form.kind === 'company') {
-        const qty = N(form.quantity)
-        const cost = N(form.unit_cost)
-        const amount = form.amount !== '' && form.amount != null ? N(form.amount) : qty * cost
-        if (amount <= 0) { alert('Enter an amount.'); setSaving(false); return }
-        await addCompanyEntry({
-          ...base,
-          entry_type: form.entry_type,
-          entry_date: form.entry_date || today(),
-          product_name: form.product_name || null,
-          quantity: qty || null,
-          unit: form.unit || null,
-          unit_cost: cost || null,
-          amount,
-          reference: form.reference || null,
-          note: form.note || null,
-        })
+        // Money paid in is a single figure; goods are a list of lines.
+        if (form.entry_type === 'remitted') {
+          const amount = N(form.amount)
+          if (amount <= 0) { alert('Enter the amount you paid.'); setSaving(false); return }
+          await addCompanyEntry({
+            ...base,
+            entry_type: 'remitted',
+            entry_date: form.entry_date || today(),
+            amount,
+            reference: form.reference || null,
+            note: form.note || null,
+          })
+        } else {
+          const rows = (form.lines || []).filter(l => l.product_name && (N(l.quantity) > 0 || N(l.unit_cost) > 0))
+          if (rows.length === 0) { alert('Add at least one product line.'); setSaving(false); return }
+          for (const l of rows) {
+            const amount = N(l.quantity) * N(l.unit_cost)
+            await addCompanyEntry({
+              ...base,
+              entry_type: form.entry_type,
+              entry_date: form.entry_date || today(),
+              product_name: l.product_name,
+              quantity: N(l.quantity) || null,
+              unit: l.unit || null,
+              unit_cost: N(l.unit_cost) || null,
+              amount,
+              reference: form.reference || null,
+              note: form.note || null,
+            })
+          }
+        }
       }
 
       else if (form.kind === 'customerEntry') {
         if (!form.customer_id) { alert('Pick a customer.'); setSaving(false); return }
-        const qty = N(form.quantity)
-        const price = N(form.unit_price)
-        const amount = form.amount !== '' && form.amount != null ? N(form.amount) : qty * price
-        if (amount <= 0) { alert('Enter an amount.'); setSaving(false); return }
-        await addCustomerEntry({
-          ...base,
-          customer_id: form.customer_id,
-          entry_type: form.entry_type,
-          entry_date: form.entry_date || today(),
-          product_name: form.product_name || null,
-          quantity: qty || null,
-          unit: form.unit || null,
-          unit_price: price || null,
-          unit_cost: N(form.unit_cost) || null,
-          amount,
-          due_date: form.due_date || null,
-          note: form.note || null,
-        })
+        if (form.entry_type === 'payment') {
+          const amount = N(form.amount)
+          if (amount <= 0) { alert('Enter the amount they paid.'); setSaving(false); return }
+          await addCustomerEntry({
+            ...base,
+            customer_id: form.customer_id,
+            entry_type: 'payment',
+            entry_date: form.entry_date || today(),
+            amount,
+            note: form.note || null,
+          })
+        } else {
+          const rows = (form.lines || []).filter(l => l.product_name && (N(l.quantity) > 0 || N(l.unit_price) > 0))
+          if (rows.length === 0) { alert('Add at least one product line.'); setSaving(false); return }
+          for (const l of rows) {
+            const amount = N(l.quantity) * N(l.unit_price)
+            await addCustomerEntry({
+              ...base,
+              customer_id: form.customer_id,
+              entry_type: form.entry_type,
+              entry_date: form.entry_date || today(),
+              product_name: l.product_name,
+              quantity: N(l.quantity) || null,
+              unit: l.unit || null,
+              unit_price: N(l.unit_price) || null,
+              unit_cost: N(l.unit_cost) || null,
+              amount,
+              due_date: form.due_date || null,
+              note: form.note || null,
+            })
+          }
+        }
       }
 
       else if (form.kind === 'peer') {
@@ -286,6 +339,94 @@ export default function RepLedger({ brand, showToast }) {
       '</body></html>')
     w.document.close()
     setTimeout(() => { w.focus(); w.print() }, 400)
+  }
+
+  // Every customer on one sheet — what a company asks for when they want the
+  // rep's whole outstanding book at a glance, rather than a page per customer.
+  function printAllCustomers(detailed) {
+    const owing = customerBalances
+      .filter(b => b.entries.length > 0 || b.balance !== 0)
+      .sort((a, b) => b.balance - a.balance)
+
+    if (owing.length === 0) { alert('No customer activity to print yet.'); return }
+
+    const w = window.open('', '_blank', 'width=900,height=1000')
+    if (!w) { alert('Your browser blocked the print window. Allow pop-ups for this site.'); return }
+
+    const grand = owing.reduce((t, b) => ({
+      supplied: t.supplied + b.supplied,
+      paid: t.paid + b.paid,
+      balance: t.balance + b.balance,
+    }), { supplied: 0, paid: 0, balance: 0 })
+
+    const summaryRows = owing.map((b, i) =>
+      '<tr>' +
+      '<td>' + (i + 1) + '</td>' +
+      '<td><strong>' + b.customer.name + '</strong>' + (b.customer.shop_name ? '<br><span class="mut">' + b.customer.shop_name + '</span>' : '') + '</td>' +
+      '<td>' + (b.customer.phone || '') + '</td>' +
+      '<td class="r">' + fmt(b.supplied) + '</td>' +
+      '<td class="r">' + fmt(b.paid) + '</td>' +
+      '<td class="r"><strong>' + fmt(b.balance) + '</strong></td>' +
+      '</tr>'
+    ).join('')
+
+    let detailBlocks = ''
+    if (detailed) {
+      detailBlocks = owing.map(b => {
+        const rows = [...b.entries]
+          .sort((x, y) => (x.entry_date || '').localeCompare(y.entry_date || ''))
+          .map(r =>
+            '<tr>' +
+            '<td>' + fmtDate(r.entry_date) + '</td>' +
+            '<td>' + (r.entry_type === 'payment' ? 'Payment received' : (r.product_name || (r.entry_type === 'returned' ? 'Goods returned' : 'Goods supplied'))) + '</td>' +
+            '<td>' + (r.quantity ? r.quantity + ' ' + (r.unit || '') : '') + '</td>' +
+            '<td class="r">' + (r.entry_type === 'supplied' ? fmt(N(r.amount)) : '') + '</td>' +
+            '<td class="r">' + (r.entry_type === 'payment' ? fmt(N(r.amount)) : '') + '</td>' +
+            '</tr>'
+          ).join('')
+        return '<div class="block">' +
+          '<h2>' + b.customer.name + (b.customer.shop_name ? ' — ' + b.customer.shop_name : '') + '</h2>' +
+          '<div class="mut">' + (b.customer.phone || '') + (b.customer.address ? ' · ' + b.customer.address : '') + '</div>' +
+          '<table><thead><tr><th>Date</th><th>Detail</th><th>Qty</th><th class="r">Supplied</th><th class="r">Paid</th></tr></thead>' +
+          '<tbody>' + rows + '</tbody></table>' +
+          '<div class="blockfoot">Balance owing: <strong>' + fmt(b.balance) + '</strong></div>' +
+          '</div>'
+      }).join('')
+    }
+
+    w.document.write('<!DOCTYPE html><html><head><title>All customers</title><style>' +
+      '*{margin:0;padding:0;box-sizing:border-box;font-family:system-ui,-apple-system,sans-serif}' +
+      'body{padding:26px;color:#0f172a}' +
+      '.biz{font-size:13px;font-weight:800;color:#0f766e;margin-bottom:12px}' +
+      'h1{font-size:19px;margin-bottom:2px}' +
+      '.sub{font-size:12px;color:#64748b}' +
+      '.mut{font-size:11px;color:#94a3b8;font-weight:400}' +
+      'table{width:100%;border-collapse:collapse;margin-top:12px;font-size:12px}' +
+      'th{background:#0f172a;color:#fff;text-align:left;padding:7px 9px;font-size:10.5px;text-transform:uppercase;letter-spacing:.04em}' +
+      'td{padding:7px 9px;border-bottom:1px solid #e2e8f0;vertical-align:top}' +
+      'td.r,th.r{text-align:right}' +
+      'tfoot td{border-top:2px solid #0f172a;font-weight:900;font-size:13px}' +
+      '.block{margin-top:26px;page-break-inside:avoid}' +
+      '.block h2{font-size:14px;margin-bottom:2px}' +
+      '.blockfoot{text-align:right;margin-top:6px;font-size:12.5px;border-top:1px solid #cbd5e1;padding-top:5px}' +
+      '.foot{margin-top:26px;font-size:10.5px;color:#94a3b8;border-top:1px solid #e2e8f0;padding-top:8px}' +
+      '@media print{@page{margin:12mm}}' +
+      '</style></head><body>' +
+      '<div class="biz">' + (brand?.name || 'CareHub') + '</div>' +
+      '<h1>Customer accounts — full summary</h1>' +
+      '<div class="sub">Rep: ' + meName + '</div>' +
+      '<div class="sub">Printed ' + nowStr() + '   ·   ' + owing.length + ' customer(s)</div>' +
+      '<table><thead><tr><th>#</th><th>Customer</th><th>Phone</th><th class="r">Supplied</th><th class="r">Paid</th><th class="r">Balance</th></tr></thead>' +
+      '<tbody>' + summaryRows + '</tbody>' +
+      '<tfoot><tr><td colspan="3">TOTAL</td>' +
+      '<td class="r">' + fmt(grand.supplied) + '</td>' +
+      '<td class="r">' + fmt(grand.paid) + '</td>' +
+      '<td class="r">' + fmt(grand.balance) + '</td></tr></tfoot></table>' +
+      detailBlocks +
+      '<div class="foot">Generated by CareHub — reflects entries recorded up to the print date.</div>' +
+      '</body></html>')
+    w.document.close()
+    setTimeout(() => { w.focus(); w.print() }, 500)
   }
 
   function printCustomer(b) {
@@ -455,9 +596,9 @@ export default function RepLedger({ brand, showToast }) {
       {tab === 'company' && (
         <div>
           <div style={{ display: 'flex', gap: '8px', marginBottom: '14px', flexWrap: 'wrap' }}>
-            <TealBtn onClick={() => setForm({ kind: 'company', entry_type: 'collected', entry_date: today() })}>+ Goods collected</TealBtn>
+            <TealBtn onClick={() => setForm({ kind: 'company', entry_type: 'collected', entry_date: today(), lines: [blankLine()] })}>+ Goods collected</TealBtn>
             <GhostBtn onClick={() => setForm({ kind: 'company', entry_type: 'remitted', entry_date: today() })} style={{ padding: '10px 14px' }}>+ Money paid in</GhostBtn>
-            <GhostBtn onClick={() => setForm({ kind: 'company', entry_type: 'returned', entry_date: today() })} style={{ padding: '10px 14px' }}>+ Goods returned</GhostBtn>
+            <GhostBtn onClick={() => setForm({ kind: 'company', entry_type: 'returned', entry_date: today(), lines: [blankLine()] })} style={{ padding: '10px 14px' }}>+ Goods returned</GhostBtn>
             <GhostBtn onClick={printCompany} style={{ padding: '10px 14px' }}>Print</GhostBtn>
           </div>
 
@@ -504,11 +645,18 @@ export default function RepLedger({ brand, showToast }) {
       {/* ── CUSTOMERS ── */}
       {tab === 'customers' && !openCustomer && (
         <div>
-          <div style={{ display: 'flex', gap: '8px', marginBottom: '14px', flexWrap: 'wrap' }}>
+          <div style={{ display: 'flex', gap: '8px', marginBottom: '10px', flexWrap: 'wrap' }}>
             <TealBtn onClick={() => setForm({ kind: 'customer' })}>+ New customer</TealBtn>
-            <GhostBtn onClick={() => setForm({ kind: 'customerEntry', entry_type: 'supplied', entry_date: today() })} style={{ padding: '10px 14px' }}>+ Goods supplied</GhostBtn>
+            <GhostBtn onClick={() => setForm({ kind: 'customerEntry', entry_type: 'supplied', entry_date: today(), lines: [blankLine()] })} style={{ padding: '10px 14px' }}>+ Goods supplied</GhostBtn>
             <GhostBtn onClick={() => setForm({ kind: 'customerEntry', entry_type: 'payment', entry_date: today() })} style={{ padding: '10px 14px' }}>+ Payment received</GhostBtn>
           </div>
+
+          {customers.length > 0 && (
+            <div style={{ display: 'flex', gap: '8px', marginBottom: '14px', flexWrap: 'wrap', paddingBottom: '12px', borderBottom: '1px solid #f1f5f9' }}>
+              <GhostBtn onClick={() => printAllCustomers(false)} style={{ padding: '10px 14px' }}>Print all — summary</GhostBtn>
+              <GhostBtn onClick={() => printAllCustomers(true)} style={{ padding: '10px 14px' }}>Print all — full detail</GhostBtn>
+            </div>
+          )}
 
           {customers.length === 0 && (
             <Card style={{ padding: '28px', textAlign: 'center' }}>
@@ -573,7 +721,7 @@ export default function RepLedger({ brand, showToast }) {
               </div>
 
               <div style={{ display: 'flex', gap: '8px', marginTop: '14px', flexWrap: 'wrap' }}>
-                <TealBtn onClick={() => setForm({ kind: 'customerEntry', entry_type: 'supplied', customer_id: b.customer.id, entry_date: today() })} style={{ flex: 1, padding: '11px' }}>+ Supplied</TealBtn>
+                <TealBtn onClick={() => setForm({ kind: 'customerEntry', entry_type: 'supplied', customer_id: b.customer.id, entry_date: today(), lines: [blankLine()] })} style={{ flex: 1, padding: '11px' }}>+ Supplied</TealBtn>
                 <GhostBtn onClick={() => setForm({ kind: 'customerEntry', entry_type: 'payment', customer_id: b.customer.id, entry_date: today() })} style={{ flex: 1, padding: '11px' }}>+ Payment</GhostBtn>
                 <GhostBtn onClick={() => printCustomer(b)} style={{ flex: 1, padding: '11px' }}>Print</GhostBtn>
               </div>
@@ -681,20 +829,15 @@ export default function RepLedger({ brand, showToast }) {
               {form.kind === 'company' && (
                 <>
                   <Inp label='Date' value={form.entry_date} onChange={v => setForm({ ...form, entry_date: v })} type='date' />
-                  {form.entry_type !== 'remitted' && (
-                    <>
-                      <Inp label='Product' value={form.product_name} onChange={v => setForm({ ...form, product_name: v })} placeholder='What did you collect?' />
-                      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
-                        <Inp label='Quantity' value={form.quantity} onChange={v => setForm({ ...form, quantity: v })} type='number' placeholder='0' />
-                        <Inp label='Unit' value={form.unit} onChange={v => setForm({ ...form, unit: v })} placeholder='carton, pack…' />
-                      </div>
-                      <Inp label='Company price per unit (₦)' value={form.unit_cost} onChange={v => setForm({ ...form, unit_cost: v })} type='number' placeholder='0' />
-                    </>
+
+                  {form.entry_type === 'remitted' ? (
+                    <Inp label='Amount paid (₦) *' value={form.amount} onChange={v => setForm({ ...form, amount: v })} type='number' placeholder='0' />
+                  ) : (
+                    <LineGrid form={form} priceField='unit_cost' priceLabel='Company price'
+                      setLine={setLine} removeLine={removeLine} total={linesTotal(form, 'unit_cost')} />
                   )}
-                  <Inp label={'Total amount (₦)' + (form.entry_type !== 'remitted' ? ' — leave blank to calculate' : '')}
-                    value={form.amount} onChange={v => setForm({ ...form, amount: v })} type='number'
-                    placeholder={form.quantity && form.unit_cost ? String(N(form.quantity) * N(form.unit_cost)) : '0'} />
-                  <Inp label='Reference / invoice no.' value={form.reference} onChange={v => setForm({ ...form, reference: v })} placeholder='Optional' />
+
+                  <Inp label='Reference / invoice no.' value={form.reference} onChange={v => setForm({ ...form, reference: v })} placeholder='Optional — applies to all lines' />
                   <Textarea label='Note' value={form.note} onChange={v => setForm({ ...form, note: v })} rows={2} />
                 </>
               )}
@@ -710,23 +853,17 @@ export default function RepLedger({ brand, showToast }) {
                     </select>
                   </div>
                   <Inp label='Date' value={form.entry_date} onChange={v => setForm({ ...form, entry_date: v })} type='date' />
-                  {form.entry_type !== 'payment' && (
+
+                  {form.entry_type === 'payment' ? (
+                    <Inp label='Amount received (₦) *' value={form.amount} onChange={v => setForm({ ...form, amount: v })} type='number' placeholder='0' />
+                  ) : (
                     <>
-                      <Inp label='Product' value={form.product_name} onChange={v => setForm({ ...form, product_name: v })} placeholder='What did you give them?' />
-                      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
-                        <Inp label='Quantity' value={form.quantity} onChange={v => setForm({ ...form, quantity: v })} type='number' placeholder='0' />
-                        <Inp label='Unit' value={form.unit} onChange={v => setForm({ ...form, unit: v })} placeholder='carton, pack…' />
-                      </div>
-                      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
-                        <Inp label='Your selling price / unit' value={form.unit_price} onChange={v => setForm({ ...form, unit_price: v })} type='number' placeholder='0' />
-                        <Inp label='What it cost you / unit' value={form.unit_cost} onChange={v => setForm({ ...form, unit_cost: v })} type='number' placeholder='0' />
-                      </div>
+                      <LineGrid form={form} priceField='unit_price' priceLabel='Your price'
+                        showCost setLine={setLine} removeLine={removeLine} total={linesTotal(form, 'unit_price')} />
                       <Inp label='Balance due by' value={form.due_date} onChange={v => setForm({ ...form, due_date: v })} type='date' />
                     </>
                   )}
-                  <Inp label={'Total amount (₦)' + (form.entry_type !== 'payment' ? ' — leave blank to calculate' : '')}
-                    value={form.amount} onChange={v => setForm({ ...form, amount: v })} type='number'
-                    placeholder={form.quantity && form.unit_price ? String(N(form.quantity) * N(form.unit_price)) : '0'} />
+
                   <Textarea label='Note' value={form.note} onChange={v => setForm({ ...form, note: v })} rows={2} />
                 </>
               )}
@@ -753,6 +890,95 @@ export default function RepLedger({ brand, showToast }) {
           </div>
         </div>
       )}
+    </div>
+  )
+}
+
+// A compact multi-line entry grid. One row per product; a new blank row appears
+// as soon as you name a product, so a ten-item delivery is ten quick rows and
+// one save — not ten separate forms.
+function LineGrid({ form, priceField, priceLabel, showCost, setLine, removeLine, total }) {
+  const lines = form.lines || []
+  const cell = {
+    width: '100%', padding: '9px 8px', borderRadius: '8px',
+    border: '1px solid #e2e8f0', fontSize: '13px', boxSizing: 'border-box', outline: 'none',
+  }
+  const head = {
+    fontSize: '10px', fontWeight: '800', color: '#94a3b8',
+    textTransform: 'uppercase', letterSpacing: '0.04em', marginBottom: '4px',
+  }
+  return (
+    <div>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: '8px' }}>
+        <div style={{ fontSize: '12px', fontWeight: '700', color: '#334155' }}>Products</div>
+        <div style={{ fontSize: '11px', color: '#94a3b8' }}>{lines.filter(l => l.product_name).length} line(s)</div>
+      </div>
+
+      {lines.map((l, i) => {
+        const lineTotal = (parseFloat(l.quantity) || 0) * (parseFloat(l[priceField]) || 0)
+        const filled = (l.product_name || '').trim().length > 0
+        return (
+          <div key={i} style={{
+            border: '1px solid ' + (filled ? '#ccfbf1' : '#f1f5f9'),
+            background: filled ? '#f8fffe' : 'white',
+            borderRadius: '10px', padding: '10px', marginBottom: '8px',
+          }}>
+            <div style={{ display: 'flex', gap: '8px', alignItems: 'flex-start' }}>
+              <div style={{ flex: 1 }}>
+                <div style={head}>Product</div>
+                <input value={l.product_name} onChange={e => setLine(i, 'product_name', e.target.value)}
+                  placeholder='Start typing…' style={cell} />
+              </div>
+              {lines.length > 1 && (
+                <button type='button' onClick={() => removeLine(i)}
+                  style={{ marginTop: '16px', flexShrink: 0, background: 'none', border: 'none', color: '#cbd5e1', fontSize: '16px', fontWeight: '700', cursor: 'pointer', padding: '4px' }}>
+                  ✕
+                </button>
+              )}
+            </div>
+
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1.2fr', gap: '8px', marginTop: '8px' }}>
+              <div>
+                <div style={head}>Qty</div>
+                <input value={l.quantity} onChange={e => setLine(i, 'quantity', e.target.value)}
+                  type='number' inputMode='decimal' placeholder='0' style={cell} />
+              </div>
+              <div>
+                <div style={head}>Unit</div>
+                <input value={l.unit} onChange={e => setLine(i, 'unit', e.target.value)}
+                  placeholder='carton' style={cell} />
+              </div>
+              <div>
+                <div style={head}>{priceLabel} ₦</div>
+                <input value={l[priceField]} onChange={e => setLine(i, priceField, e.target.value)}
+                  type='number' inputMode='decimal' placeholder='0' style={cell} />
+              </div>
+            </div>
+
+            {showCost && (
+              <div style={{ marginTop: '8px' }}>
+                <div style={head}>What it cost you ₦ (optional — for your margin)</div>
+                <input value={l.unit_cost} onChange={e => setLine(i, 'unit_cost', e.target.value)}
+                  type='number' inputMode='decimal' placeholder='0' style={cell} />
+              </div>
+            )}
+
+            {lineTotal > 0 && (
+              <div style={{ textAlign: 'right', marginTop: '7px', fontSize: '12.5px', fontWeight: '800', color: '#0f766e' }}>
+                Line total ₦{lineTotal.toLocaleString()}
+              </div>
+            )}
+          </div>
+        )
+      })}
+
+      <div style={{
+        display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+        background: '#0f172a', color: 'white', borderRadius: '10px', padding: '12px 14px', marginTop: '4px',
+      }}>
+        <span style={{ fontSize: '12px', fontWeight: '700', color: '#94a3b8' }}>TOTAL</span>
+        <span style={{ fontSize: '19px', fontWeight: '900' }}>₦{Number(total || 0).toLocaleString()}</span>
+      </div>
     </div>
   )
 }
