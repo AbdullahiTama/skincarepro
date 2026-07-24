@@ -716,6 +716,28 @@ export async function commentOnActivity(data, businessId, repStaffId) {
   return saved
 }
 
+// Receipts and invoices a rep photographs — proof attached to a ledger entry.
+export async function uploadRepReceipt(file) {
+  const safe = (file.name || 'receipt').replace(/[^a-zA-Z0-9._-]/g, '_')
+  const path = 'receipt-' + Date.now() + '-' + Math.floor(Math.random() * 100000) + '-' + safe
+  const res = await fetch(SB_URL + '/storage/v1/object/rep-receipts/' + encodeURIComponent(path), {
+    method: 'POST',
+    headers: {
+      'apikey': SB_KEY,
+      'Authorization': 'Bearer ' + SB_KEY,
+      'Content-Type': file.type || 'application/octet-stream',
+    },
+    body: file,
+  })
+  if (!res.ok) {
+    const text = await res.text()
+    let detail = text
+    try { detail = JSON.parse(text).message || text } catch (e) {}
+    throw new Error('Receipt upload failed (' + res.status + '): ' + detail)
+  }
+  return SB_URL + '/storage/v1/object/public/rep-receipts/' + encodeURIComponent(path)
+}
+
 // REP LEDGER (the rep's own account books — company, customers, other reps)
 // A rep can only ever be shown their own rows; staffId null means the Owner,
 // who sees the whole company's ledger.
